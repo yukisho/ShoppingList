@@ -64,8 +64,13 @@ local function makeButton(parent, text, x, width)
     return button
 end
 
-local function makeCombo(parent, x, y, width)
-    local container = WINDOW_MANAGER:CreateControlFromVirtual(nil, parent, "ZO_ComboBox")
+local function makeCombo(parent, name, x, y, width)
+    local controlName = parent:GetName() .. name .. "Combo"
+    local container = WINDOW_MANAGER:CreateControlFromVirtual(
+        controlName,
+        parent,
+        "ZO_ComboBox"
+    )
     container:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
     container:SetDimensions(width, 30)
     local combo = ZO_ComboBox_ObjectFromContainer(container)
@@ -183,14 +188,14 @@ function Editor:Initialize()
     self.setName:SetDefaultText(GetString(SI_SHOPPING_LIST_EDITOR_ANY_SET))
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_TRAIT), 18, 162)
-    self.trait = makeCombo(window, 146, 162, 280)
+    self.trait = makeCombo(window, "Trait", 146, 162, 280)
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_QUALITY_RULE), 18, 202)
-    self.qualityMode = makeCombo(window, 146, 202, 135)
-    self.quality = makeCombo(window, 291, 202, 135)
+    self.qualityMode = makeCombo(window, "QualityMode", 146, 202, 135)
+    self.quality = makeCombo(window, "Quality", 291, 202, 135)
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_LEVEL_RULE), 18, 242)
-    self.levelMode = makeCombo(window, 146, 242, 135)
+    self.levelMode = makeCombo(window, "LevelMode", 146, 242, 135)
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_LEVEL), 18, 282)
     self.level = makeEdit(window, 146, 282, 90, true)

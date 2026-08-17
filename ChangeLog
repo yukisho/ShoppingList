@@ -1,3 +1,7 @@
+0.16.1
+• Restored the Trait, Quality Rule, Quality, and Level Rule dropdowns in the keyboard item editor.
+• Corrected Craft Bag quantities by enumerating virtual bag slots with their sparse slot IDs.
+
 0.16.0
 • Added live owned quantities from the backpack, bank, subscriber bank, and craft bag without changing purchase progress.
 • Added persistent notes for lists and individual items.

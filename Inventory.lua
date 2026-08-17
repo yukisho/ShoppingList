@@ -71,28 +71,44 @@ function Inventory:QueueRefresh(delayMs)
     end, delayMs or 100)
 end
 
+local function readSlot(byName, bag, slotIndex)
+    local stack = GetSlotStackSize(bag.id, slotIndex) or 0
+    if stack == 0 then
+        return
+    end
+
+    local itemName = GetItemName(bag.id, slotIndex)
+    local normalizedName = ShoppingListData.NormalizeName(itemName)
+    if normalizedName == "" then
+        return
+    end
+
+    local entries = byName[normalizedName]
+    if not entries then
+        entries = {}
+        byName[normalizedName] = entries
+    end
+    entries[#entries + 1] = {
+        kind = bag.kind,
+        link = GetItemLink(bag.id, slotIndex, LINK_STYLE_DEFAULT),
+        name = itemName,
+        stack = stack,
+    }
+end
+
 function Inventory:ReadItems()
     local byName = {}
     for _, bag in ipairs(self.bags) do
-        local size = GetBagSize(bag.id) or 0
-        for slotIndex = 0, size - 1 do
-            local stack = GetSlotStackSize(bag.id, slotIndex) or 0
-            if stack > 0 then
-                local itemName = GetItemName(bag.id, slotIndex)
-                local normalizedName = ShoppingListData.NormalizeName(itemName)
-                if normalizedName ~= "" then
-                    local entries = byName[normalizedName]
-                    if not entries then
-                        entries = {}
-                        byName[normalizedName] = entries
-                    end
-                    entries[#entries + 1] = {
-                        kind = bag.kind,
-                        link = GetItemLink(bag.id, slotIndex, LINK_STYLE_DEFAULT),
-                        name = itemName,
-                        stack = stack,
-                    }
-                end
+        if bag.id == BAG_VIRTUAL then
+            local slotIndex = GetNextVirtualBagSlotId()
+            while slotIndex do
+                readSlot(byName, bag, slotIndex)
+                slotIndex = GetNextVirtualBagSlotId(slotIndex)
+            end
+        else
+            local size = GetBagSize(bag.id) or 0
+            for slotIndex = 0, size - 1 do
+                readSlot(byName, bag, slotIndex)
             end
         end
     end
