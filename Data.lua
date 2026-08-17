@@ -3,6 +3,7 @@ ShoppingListData = {}
 local Data = ShoppingListData
 local DEFAULT_LIST_NAME = GetString(SI_SHOPPING_LIST_DEFAULT_LIST_NAME)
 local MAX_DELETED_ACTIONS = 20
+local MAX_NOTE_LENGTH = 2000
 local VALID_FILTERS = {
     all = true,
     needed = true,
@@ -21,6 +22,7 @@ local defaults = {
         {
             id = 1,
             name = DEFAULT_LIST_NAME,
+            note = "",
             items = {},
             totalSpent = 0,
             tripActive = true,
@@ -35,6 +37,9 @@ local defaults = {
         itemFilter = "all",
         filterMigrated = false,
         multiListTrips = false,
+        fontScale = 1,
+        highContrast = false,
+        nonColorIndicators = false,
         window = {
             width = 350,
             height = 500,
@@ -42,9 +47,44 @@ local defaults = {
     },
 }
 
+Data.MAX_NOTE_LENGTH = MAX_NOTE_LENGTH
+
 local function normalizeName(name)
     name = zo_strtrim(name or "")
     return zo_strlower(zo_strformat(SI_TOOLTIP_ITEM_NAME, name))
+end
+
+local function normalizeNote(note)
+    note = tostring(note or "")
+    if #note > MAX_NOTE_LENGTH then
+        note = string.sub(note, 1, MAX_NOTE_LENGTH)
+    end
+    return note
+end
+
+local function deepCopy(value, seen)
+    if type(value) ~= "table" then
+        return value
+    end
+    seen = seen or {}
+    if seen[value] then
+        return seen[value]
+    end
+    local copy = {}
+    seen[value] = copy
+    for key, entry in pairs(value) do
+        copy[deepCopy(key, seen)] = deepCopy(entry, seen)
+    end
+    return copy
+end
+
+local function replaceTable(target, source)
+    for key in pairs(target) do
+        target[key] = nil
+    end
+    for key, value in pairs(source) do
+        target[key] = value
+    end
 end
 
 local function readLinkDetails(itemLink)
@@ -130,6 +170,9 @@ function Data:Migrate()
         settings.itemFilter = "all"
     end
     settings.multiListTrips = settings.multiListTrips == true
+    settings.fontScale = zo_clamp(tonumber(settings.fontScale) or 1, 0.9, 1.4)
+    settings.highContrast = settings.highContrast == true
+    settings.nonColorIndicators = settings.nonColorIndicators == true
     local window = settings.window or {}
     settings.window = window
     window.width = zo_clamp(tonumber(window.width) or 350, 350, 900)
@@ -148,6 +191,7 @@ function Data:Migrate()
                     list.id
                 )
             end
+            list.note = normalizeNote(list.note)
             list.items = type(list.items) == "table" and list.items or {}
             list.tripActive = list.tripActive == true
             if archived then
@@ -161,6 +205,7 @@ function Data:Migrate()
                 item.id = tonumber(item.id) or (highestItemId + 1)
                 highestItemId = math.max(highestItemId, item.id)
                 item.normalizedName = item.normalizedName or normalizeName(item.name)
+                item.note = normalizeNote(item.note)
                 item.desired = math.max(1, tonumber(item.desired) or 1)
                 item.purchased = math.max(0, tonumber(item.purchased) or 0)
                 item.match = item.match or {}
@@ -365,7 +410,7 @@ function Data:GetUniqueListName(baseName, exceptId)
     return name
 end
 
-function Data:AddList(name)
+function Data:AddList(name, note)
     name = zo_strtrim(name or "")
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_ENTER_LIST_NAME)
@@ -377,6 +422,7 @@ function Data:AddList(name)
     local list = {
         id = self.saved.nextListId,
         name = name,
+        note = normalizeNote(note),
         items = {},
         totalSpent = 0,
         budget = nil,
@@ -413,6 +459,7 @@ function Data:ImportList(name, items)
     local list = {
         id = self.saved.nextListId,
         name = self:GetUniqueListName(name),
+        note = "",
         items = {},
         totalSpent = 0,
         budget = nil,
@@ -423,6 +470,7 @@ function Data:ImportList(name, items)
         list.items[#list.items + 1] = {
             id = nextItemId,
             name = zo_strformat(SI_TOOLTIP_ITEM_NAME, source.name),
+            note = "",
             normalizedName = normalizeName(source.name),
             itemLink = "",
             desired = source.desired,
@@ -447,7 +495,7 @@ function Data:ImportList(name, items)
     return list
 end
 
-function Data:DuplicateList(id, name)
+function Data:DuplicateList(id, name, note)
     local source = self:FindList(id)
     if not source then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
@@ -464,6 +512,7 @@ function Data:DuplicateList(id, name)
     local copy = {
         id = self.saved.nextListId,
         name = name,
+        note = normalizeNote(note ~= nil and note or source.note),
         items = {},
         totalSpent = 0,
         budget = source.budget,
@@ -480,6 +529,7 @@ function Data:DuplicateList(id, name)
         copy.items[#copy.items + 1] = {
             id = self.saved.nextItemId,
             name = item.name,
+            note = item.note,
             normalizedName = item.normalizedName,
             nameHash = item.nameHash,
             itemLink = item.itemLink,
@@ -515,6 +565,15 @@ function Data:RenameList(id, name)
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_NAME_EXISTS)
     end
     list.name = name
+    return true
+end
+
+function Data:UpdateListNote(id, note)
+    local list = self:FindList(id)
+    if not list then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    list.note = normalizeNote(note)
     return true
 end
 
@@ -577,6 +636,7 @@ function Data:ArchiveList(id)
         local replacement = {
             id = self.saved.nextListId,
             name = self:GetUniqueListName(DEFAULT_LIST_NAME),
+            note = "",
             items = {},
             totalSpent = 0,
             budget = nil,
@@ -612,6 +672,38 @@ end
 
 function Data:GetSettings()
     return self.saved.settings
+end
+
+function Data:GetBackupData()
+    return deepCopy(self.saved)
+end
+
+function Data:RestoreBackup(snapshot)
+    if type(snapshot) ~= "table"
+        or type(snapshot.lists) ~= "table"
+        or type(snapshot.settings) ~= "table"
+    then
+        return false, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
+    end
+
+    local previous = deepCopy(self.saved)
+    local settingsReference = self.saved.settings
+    local function apply(source)
+        local restored = deepCopy(source)
+        local restoredSettings = restored.settings or {}
+        restored.settings = nil
+        replaceTable(self.saved, restored)
+        replaceTable(settingsReference, restoredSettings)
+        self.saved.settings = settingsReference
+        self:Migrate()
+    end
+
+    local ok = pcall(apply, snapshot)
+    if not ok then
+        pcall(apply, previous)
+        return false, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
+    end
+    return true
 end
 
 function Data:GetItemFilter()
@@ -685,6 +777,7 @@ function Data:AddItem(name, quantity, itemLink, nameHash)
     local item = {
         id = self.saved.nextItemId,
         name = zo_strformat(SI_TOOLTIP_ITEM_NAME, name),
+        note = "",
         normalizedName = normalizeName(name),
         nameHash = nameHash,
         itemLink = itemLink or "",
@@ -721,6 +814,7 @@ function Data:UpdateItem(id, values)
     end
 
     item.desired = math.max(1, math.floor(tonumber(values.desired) or item.desired))
+    item.note = normalizeNote(values.note ~= nil and values.note or item.note)
     local maxUnitPrice = math.floor(math.max(0, tonumber(values.maxUnitPrice) or 0))
     item.maxUnitPrice = maxUnitPrice > 0 and maxUnitPrice or nil
 

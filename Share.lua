@@ -17,7 +17,7 @@ end
 
 local function makeLabel(parent, font)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
-    label:SetFont(font or "ZoFontGame")
+    ShoppingListAccessibility:SetFont(label, font or "ZoFontGame")
     label:SetColor(0.9, 0.9, 0.9, 1)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
@@ -26,7 +26,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 30)
-    button:SetFont("ZoFontGame")
+    ShoppingListAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
     button:SetMouseOverFontColor(1, 1, 1, 1)
@@ -88,6 +88,9 @@ local function decodeBase64(value)
     end
     return table.concat(result)
 end
+
+Share.EncodeBase64 = encodeBase64
+Share.DecodeBase64 = decodeBase64
 
 local function appendU16(parts, value)
     parts[#parts + 1] = string.char(math.floor(value / 256) % 256, value % 256)
@@ -235,6 +238,7 @@ function Share:Initialize()
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop)
 
     local title = makeLabel(window, "ZoFontWinH2")
     title:SetText(GetString(SI_SHOPPING_LIST_SHARE_TITLE))
@@ -267,6 +271,7 @@ function Share:Initialize()
     codeEdit:ClearAnchors()
     codeEdit:SetAnchor(TOPLEFT, codeBackdrop, TOPLEFT, 3, 2)
     codeEdit:SetAnchor(BOTTOMRIGHT, codeBackdrop, BOTTOMRIGHT, -3, -2)
+    ShoppingListAccessibility:SetFont(codeEdit, "ZoFontGame")
     codeEdit:SetMaxInputChars(MAX_CODE_LENGTH)
     codeEdit:SetNewLineEnabled(false)
     codeEdit:SetSelectAllOnFocus(true)
@@ -288,6 +293,14 @@ function Share:Initialize()
     local import = makeButton(window, GetString(SI_SHOPPING_LIST_SHARE_IMPORT_CODE), 105)
     import:SetAnchor(LEFT, selectCode, RIGHT, 8, 0)
     import:SetHandler("OnClicked", function() self:OpenImportDialog() end)
+
+    local backup = makeButton(window, GetString(SI_SHOPPING_LIST_BACKUP_BUTTON), 95)
+    backup:SetAnchor(LEFT, import, RIGHT, 8, 0)
+    backup:SetHandler("OnClicked", function()
+        if self.owner.backup then
+            self.owner.backup:Open()
+        end
+    end)
 
     local close = makeButton(window, GetString(SI_SHOPPING_LIST_BUTTON_CLOSE), 80)
     close:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, -18, -16)
@@ -312,6 +325,7 @@ function Share:CreateImportDialog()
     backdrop:SetAnchorFill(dialog)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.99)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop, { 0.035, 0.035, 0.045, 0.99 })
 
     local title = makeLabel(dialog, "ZoFontWinH2")
     title:SetText(GetString(SI_SHOPPING_LIST_IMPORT_TITLE))
@@ -331,6 +345,7 @@ function Share:CreateImportDialog()
     codeEdit:ClearAnchors()
     codeEdit:SetAnchor(TOPLEFT, codeBackdrop, TOPLEFT, 3, 2)
     codeEdit:SetAnchor(BOTTOMRIGHT, codeBackdrop, BOTTOMRIGHT, -3, -2)
+    ShoppingListAccessibility:SetFont(codeEdit, "ZoFontGame")
     codeEdit:SetMaxInputChars(MAX_CODE_LENGTH)
     codeEdit:SetNewLineEnabled(false)
     codeEdit:SetSelectAllOnFocus(true)
@@ -353,6 +368,9 @@ function Share:CreateImportDialog()
 end
 
 function Share:SetStatus(message, isError)
+    if self.owner.accessibility then
+        message = self.owner.accessibility:FormatStatus(message, isError)
+    end
     self.status:SetText(message or "")
     if isError then
         self.status:SetColor(1, 0.35, 0.35, 1)
@@ -375,6 +393,9 @@ function Share:Hide()
 end
 
 function Share:SetImportStatus(message, isError)
+    if self.owner.accessibility then
+        message = self.owner.accessibility:FormatStatus(message, isError)
+    end
     self.importStatus:SetText(message or "")
     if isError then
         self.importStatus:SetColor(1, 0.35, 0.35, 1)
@@ -433,6 +454,7 @@ function Share:ImportCode()
 
     self.owner.ui.listSignature = nil
     self.owner.ui:SelectList(list.id)
+    self.owner:RefreshInventory()
     self:Hide()
     self.owner.ui:SetStatus(zo_strformat(
         GetString(SI_SHOPPING_LIST_STATUS_LIST_IMPORTED),

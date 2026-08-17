@@ -5,6 +5,8 @@ local EDIT_DIALOG = "SHOPPING_LIST_GAMEPAD_EDIT_ITEM"
 local ARCHIVES_DIALOG = "SHOPPING_LIST_GAMEPAD_ARCHIVES"
 local SHARE_DIALOG = "SHOPPING_LIST_GAMEPAD_SHARE"
 local IMPORT_DIALOG = "SHOPPING_LIST_GAMEPAD_IMPORT"
+local BACKUP_DIALOG = "SHOPPING_LIST_GAMEPAD_BACKUP"
+local BACKUP_RESTORE_DIALOG = "SHOPPING_LIST_GAMEPAD_BACKUP_RESTORE"
 local HELP_DIALOG = "SHOPPING_LIST_GAMEPAD_HELP"
 local RELEASE_NOTES_DIALOG = "SHOPPING_LIST_GAMEPAD_RELEASE_NOTES"
 local LIST_NAME_DIALOG = "SHOPPING_LIST_GAMEPAD_LIST_NAME"
@@ -162,6 +164,7 @@ function Gamepad:InitializeManagementDialogs()
     self:InitializeArchivesDialog()
     self:InitializeShareDialog()
     self:InitializeImportDialog()
+    self:InitializeBackupDialog()
     self:InitializeHelpDialogs()
 end
 
@@ -285,6 +288,10 @@ function Gamepad:InitializeManageDialog()
                 function() self:OpenImportFromManagement() end
             ),
             actionEntry(
+                SI_SHOPPING_LIST_GAMEPAD_BACKUP,
+                function() self:OpenBackupFromManagement() end
+            ),
+            actionEntry(
                 SI_SHOPPING_LIST_GAMEPAD_HELP,
                 function() self:OpenHelpFromManagement() end
             ),
@@ -315,14 +322,17 @@ function Gamepad:InitializeListNameDialog()
             local current = self.owner.data:GetCurrentList()
             if self.pendingListMode == "new" then
                 self.pendingListName = ""
+                self.pendingListNote = ""
             elseif self.pendingListMode == "duplicate" then
                 local baseName = zo_strformat(
                     GetString(SI_SHOPPING_LIST_COPIED_LIST_NAME),
                     current.name
                 )
                 self.pendingListName = self.owner.data:GetUniqueListName(baseName)
+                self.pendingListNote = current.note or ""
             else
                 self.pendingListName = current.name
+                self.pendingListNote = current.note or ""
             end
             dialog:setupFunc()
         end,
@@ -343,6 +353,13 @@ function Gamepad:InitializeListNameDialog()
                 changed = function(value) self.pendingListName = value end,
                 defaultText = GetString(SI_SHOPPING_LIST_GAMEPAD_LIST_NAME),
                 maxChars = 60,
+            }),
+            textFieldEntry(SI_SHOPPING_LIST_LIST_NOTE, {
+                value = function() return self.pendingListNote end,
+                changed = function(value) self.pendingListNote = value end,
+                defaultText = GetString(SI_SHOPPING_LIST_NOTE_PLACEHOLDER),
+                maxChars = ShoppingListData.MAX_NOTE_LENGTH,
+                multiline = true,
             }),
         },
         buttons = {
@@ -590,6 +607,7 @@ function Gamepad:InitializeEditDialog()
                 level = tostring(rule.level or 1),
                 championPoints = tostring(rule.championPoints or 0),
                 maxUnitPrice = item.maxUnitPrice and tostring(item.maxUnitPrice) or "",
+                note = item.note or "",
             }
             dialog:setupFunc()
         end,
@@ -660,6 +678,13 @@ function Gamepad:InitializeEditDialog()
                 defaultText = GetString(SI_SHOPPING_LIST_EDITOR_GOLD_NONE),
                 maxChars = 10,
                 numeric = true,
+            }),
+            textFieldEntry(SI_SHOPPING_LIST_EDITOR_NOTE, {
+                value = function() return self.pendingEdit.note end,
+                changed = function(value) self.pendingEdit.note = value end,
+                defaultText = GetString(SI_SHOPPING_LIST_NOTE_PLACEHOLDER),
+                maxChars = ShoppingListData.MAX_NOTE_LENGTH,
+                multiline = true,
             }),
         },
         buttons = {
@@ -815,6 +840,75 @@ function Gamepad:InitializeImportDialog()
     })
 end
 
+function Gamepad:InitializeBackupDialog()
+    local options = {
+        value = function() return self.gamepadBackupCode end,
+        changed = function(value) self.gamepadBackupCode = value end,
+        defaultText = GetString(SI_SHOPPING_LIST_BACKUP_PLACEHOLDER),
+        maxChars = ShoppingListBackup.MAX_CODE_LENGTH,
+        multiline = true,
+    }
+    ZO_Dialogs_RegisterCustomDialog(BACKUP_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.PARAMETRIC,
+        },
+        setup = function(dialog)
+            self.gamepadBackupCode = dialog.data.code
+            dialog:setupFunc()
+        end,
+        title = {
+            text = SI_SHOPPING_LIST_BACKUP_TITLE,
+        },
+        mainText = {
+            text = SI_SHOPPING_LIST_GAMEPAD_BACKUP_HELP,
+        },
+        parametricList = {
+            textFieldEntry(SI_SHOPPING_LIST_BACKUP_TITLE, options),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_SHOPPING_LIST_SHARE_SELECT_CODE,
+                callback = function(dialog) self:SelectGamepadBackupCode(dialog) end,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_SHOPPING_LIST_BACKUP_RESTORE,
+                callback = function() self:ConfirmGamepadBackupRestore() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_GAMEPAD_BACK_OPTION,
+                callback = cancelDialog(BACKUP_DIALOG),
+            },
+        },
+    })
+
+    ZO_Dialogs_RegisterCustomDialog(BACKUP_RESTORE_DIALOG, {
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.BASIC,
+        },
+        title = {
+            text = SI_SHOPPING_LIST_BACKUP_RESTORE_TITLE,
+        },
+        mainText = {
+            text = SI_SHOPPING_LIST_BACKUP_RESTORE_CONFIRM,
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_SHOPPING_LIST_BACKUP_RESTORE,
+                callback = function() self:RestoreGamepadBackup() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+            },
+        },
+    })
+end
+
 function Gamepad:InitializeHelpDialogs()
     ZO_Dialogs_RegisterCustomDialog(HELP_DIALOG, {
         blockDialogReleaseOnPress = true,
@@ -875,6 +969,7 @@ function Gamepad:RefreshAfterManagement(status)
     self.owner.ui.listSignature = nil
     self.owner.ui:Refresh()
     self:Refresh(true)
+    self.owner:RefreshInventory()
     if status then
         self:SetStatus(status)
         self.owner.ui:SetStatus(status)
@@ -891,7 +986,10 @@ function Gamepad:SaveListNameFromManagement()
     local mode = self.pendingListMode
     local current = self.owner.data:GetCurrentList()
     if mode == "new" then
-        local list, message = self.owner.data:AddList(self.pendingListName)
+        local list, message = self.owner.data:AddList(
+            self.pendingListName,
+            self.pendingListNote
+        )
         if not list then
             showError(message)
             return
@@ -899,7 +997,8 @@ function Gamepad:SaveListNameFromManagement()
     elseif mode == "duplicate" then
         local list, message = self.owner.data:DuplicateList(
             current.id,
-            self.pendingListName
+            self.pendingListName,
+            self.pendingListNote
         )
         if not list then
             showError(message)
@@ -914,6 +1013,7 @@ function Gamepad:SaveListNameFromManagement()
             showError(message)
             return
         end
+        self.owner.data:UpdateListNote(current.id, self.pendingListNote)
     end
 
     ZO_Dialogs_ReleaseDialogOnButtonPress(LIST_NAME_DIALOG)
@@ -1173,6 +1273,7 @@ function Gamepad:SaveGamepadItemEdit()
     ZO_Dialogs_ReleaseDialogOnButtonPress(EDIT_DIALOG)
     self.owner.ui:Refresh()
     self:Refresh(true)
+    self.owner:RefreshInventory()
     local status = zo_strformat(GetString(SI_SHOPPING_LIST_STATUS_ITEM_UPDATED), item.name)
     self:SetStatus(status)
     self.owner.ui:SetStatus(status)
@@ -1191,6 +1292,7 @@ function Gamepad:ArchiveCurrentListFromManagement()
     self.owner.ui.listSignature = nil
     self.owner.ui:Refresh()
     self:Refresh(true)
+    self.owner:RefreshInventory()
     local status = zo_strformat(
         GetString(SI_SHOPPING_LIST_STATUS_LIST_ARCHIVED),
         listOrMessage.name
@@ -1244,6 +1346,7 @@ function Gamepad:RestoreArchivedList(listId)
     self.owner.ui.listSignature = nil
     self.owner.ui:Refresh()
     self:Refresh(true)
+    self.owner:RefreshInventory()
     local status = zo_strformat(
         GetString(SI_SHOPPING_LIST_STATUS_LIST_RESTORED),
         listOrMessage.name
@@ -1306,6 +1409,7 @@ function Gamepad:ImportGamepadCode()
     self.owner.ui.listSignature = nil
     self.owner.ui:Refresh()
     self:Refresh(true)
+    self.owner:RefreshInventory()
     local status = zo_strformat(
         GetString(SI_SHOPPING_LIST_STATUS_LIST_IMPORTED),
         list.name,
@@ -1314,6 +1418,67 @@ function Gamepad:ImportGamepadCode()
             and SI_SHOPPING_LIST_NOUN_ITEM
             or SI_SHOPPING_LIST_NOUN_ITEMS)
     )
+    self:SetStatus(status)
+    self.owner.ui:SetStatus(status)
+end
+
+function Gamepad:OpenBackupFromManagement()
+    local code, message = ShoppingListBackup.Encode(
+        self.owner.data:GetBackupData()
+    )
+    if not code then
+        showError(message)
+        return
+    end
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(BACKUP_DIALOG, { code = code })
+    end)
+end
+
+function Gamepad:SelectGamepadBackupCode(dialog)
+    local data = dialog.entryList:GetTargetData()
+    if not data or not data.control then
+        return
+    end
+    local edit = data.control.editBoxControl
+    edit:TakeFocus()
+    if edit.SelectAll then
+        edit:SelectAll()
+    end
+end
+
+function Gamepad:ConfirmGamepadBackupRestore()
+    local decoded, message = ShoppingListBackup.Decode(self.gamepadBackupCode)
+    if not decoded then
+        showError(message)
+        return
+    end
+    self.pendingGamepadBackup = decoded
+    releaseAndOpen(BACKUP_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(BACKUP_RESTORE_DIALOG)
+    end)
+end
+
+function Gamepad:RestoreGamepadBackup()
+    local snapshot = self.pendingGamepadBackup
+    self.pendingGamepadBackup = nil
+    local ok, message = self.owner.data:RestoreBackup(snapshot)
+    if not ok then
+        showError(message)
+        return
+    end
+
+    self.owner.ui.listSignature = nil
+    if self.owner.accessibility then
+        self.owner.accessibility:Apply()
+    end
+    if self.owner.inventory then
+        self.owner.inventory:Refresh()
+    else
+        self.owner.ui:Refresh()
+        self:Refresh(true)
+    end
+    local status = GetString(SI_SHOPPING_LIST_BACKUP_RESTORED)
     self:SetStatus(status)
     self.owner.ui:SetStatus(status)
 end

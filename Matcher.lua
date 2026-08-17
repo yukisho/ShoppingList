@@ -51,8 +51,8 @@ local function matchLevel(rule, purchase)
         and rule.championPoints == purchase.championPoints
 end
 
-function Matcher:GetScore(entry, purchase)
-    if entry.completed or entry.purchased >= entry.desired then
+function Matcher:GetScore(entry, purchase, includeComplete)
+    if not includeComplete and (entry.completed or entry.purchased >= entry.desired) then
         return nil
     end
 
@@ -95,6 +95,11 @@ function Matcher:GetScore(entry, purchase)
     end
 
     return score
+end
+
+function Matcher:MatchesItem(entry, itemLink, itemName)
+    local details = getPurchaseDetails(itemLink, itemName)
+    return self:GetScore(entry, details, true) ~= nil
 end
 
 function Matcher:ApplyPurchase(items, itemLink, itemName, quantity)

@@ -3,7 +3,9 @@ ShoppingListSettings = {}
 local Settings = ShoppingListSettings
 
 function Settings:Initialize(owner)
-    local saved = owner.data:GetSettings()
+    local function saved()
+        return owner.data:GetSettings()
+    end
     local panelName = "ShoppingListOptions"
     local buildVersion = owner:GetBuildVersion()
     local panel = {
@@ -21,15 +23,15 @@ function Settings:Initialize(owner)
         {
             type = "checkbox",
             name = GetString(SI_SHOPPING_LIST_SETTINGS_OPEN_WITH_STORE),
-            getFunc = function() return saved.autoOpen end,
-            setFunc = function(value) saved.autoOpen = value end,
+            getFunc = function() return saved().autoOpen end,
+            setFunc = function(value) saved().autoOpen = value end,
             default = true,
         },
         {
             type = "checkbox",
             name = GetString(SI_SHOPPING_LIST_SETTINGS_CLOSE_WITH_STORE),
-            getFunc = function() return saved.closeWithStore end,
-            setFunc = function(value) saved.closeWithStore = value end,
+            getFunc = function() return saved().closeWithStore end,
+            setFunc = function(value) saved().closeWithStore = value end,
             default = true,
         },
         {
@@ -61,8 +63,8 @@ function Settings:Initialize(owner)
         {
             type = "checkbox",
             name = GetString(SI_SHOPPING_LIST_SETTINGS_ANNOUNCE_PURCHASES),
-            getFunc = function() return saved.announcePurchases end,
-            setFunc = function(value) saved.announcePurchases = value end,
+            getFunc = function() return saved().announcePurchases end,
+            setFunc = function(value) saved().announcePurchases = value end,
             default = true,
         },
         {
@@ -73,9 +75,9 @@ function Settings:Initialize(owner)
                 GetString(SI_SHOPPING_LIST_SETTINGS_RIGHT),
             },
             choicesValues = { "left", "right" },
-            getFunc = function() return saved.panelSide end,
+            getFunc = function() return saved().panelSide end,
             setFunc = function(value)
-                saved.panelSide = value
+                saved().panelSide = value
                 owner.ui:PositionBesideStore()
             end,
             default = "right",
@@ -97,6 +99,44 @@ function Settings:Initialize(owner)
                 owner.gamepad:Refresh()
             end,
             width = "half",
+        },
+        {
+            type = "header",
+            name = GetString(SI_SHOPPING_LIST_SETTINGS_ACCESSIBILITY),
+        },
+        {
+            type = "dropdown",
+            name = GetString(SI_SHOPPING_LIST_SETTINGS_FONT_SCALE),
+            choices = { "90%", "100%", "110%", "120%", "130%", "140%" },
+            choicesValues = { 0.9, 1, 1.1, 1.2, 1.3, 1.4 },
+            getFunc = function() return saved().fontScale end,
+            setFunc = function(value)
+                saved().fontScale = value
+                owner.accessibility:Refresh()
+            end,
+            default = 1,
+        },
+        {
+            type = "checkbox",
+            name = GetString(SI_SHOPPING_LIST_SETTINGS_HIGH_CONTRAST),
+            tooltip = GetString(SI_SHOPPING_LIST_SETTINGS_HIGH_CONTRAST_TOOLTIP),
+            getFunc = function() return saved().highContrast end,
+            setFunc = function(value)
+                saved().highContrast = value
+                owner.accessibility:Refresh()
+            end,
+            default = false,
+        },
+        {
+            type = "checkbox",
+            name = GetString(SI_SHOPPING_LIST_SETTINGS_NON_COLOR),
+            tooltip = GetString(SI_SHOPPING_LIST_SETTINGS_NON_COLOR_TOOLTIP),
+            getFunc = function() return saved().nonColorIndicators end,
+            setFunc = function(value)
+                saved().nonColorIndicators = value
+                owner.accessibility:Refresh()
+            end,
+            default = false,
         },
     })
 end

@@ -1,3 +1,10 @@
+0.16.0
+• Added live owned quantities from the backpack, bank, subscriber bank, and craft bag without changing purchase progress.
+• Added persistent notes for lists and individual items.
+• Added full-data SLB1 backup and restore codes while keeping lightweight SL1 list-sharing codes unchanged.
+• Added font scaling, stronger contrast, and optional non-color-only status indicators.
+• Added keyboard and gamepad workflows for notes and full-data backup and restore.
+
 0.15.4
 • Completed gamepad list management with create, rename, duplicate, delete, reorder, budget, and clear-completed actions.
 • Added persistent Undo for deleted items, deleted lists, and batches cleared with Clear Completed.

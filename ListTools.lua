@@ -8,7 +8,7 @@ local TRIP_ROW_HEIGHT = 31
 
 local function makeLabel(parent, font)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
-    label:SetFont(font or "ZoFontGame")
+    ShoppingListAccessibility:SetFont(label, font or "ZoFontGame")
     label:SetColor(0.9, 0.9, 0.9, 1)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
@@ -17,7 +17,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 30)
-    button:SetFont("ZoFontGame")
+    ShoppingListAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
     button:SetMouseOverFontColor(1, 1, 1, 1)
@@ -105,6 +105,7 @@ function ListTools:CreateBulkWindow()
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop)
 
     local title = makeLabel(window, "ZoFontWinH2")
     title:SetText(GetString(SI_SHOPPING_LIST_BULK_TITLE))
@@ -137,6 +138,7 @@ function ListTools:CreateBulkWindow()
     edit:ClearAnchors()
     edit:SetAnchor(TOPLEFT, editBackdrop, TOPLEFT, 5, 4)
     edit:SetAnchor(BOTTOMRIGHT, editBackdrop, BOTTOMRIGHT, -5, -4)
+    ShoppingListAccessibility:SetFont(edit, "ZoFontGame")
     edit:SetMaxInputChars(MAX_BULK_TEXT)
     edit:SetNewLineEnabled(true)
     edit:SetSelectAllOnFocus(false)
@@ -173,6 +175,7 @@ function ListTools:CreateTripWindow()
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop)
 
     local title = makeLabel(window, "ZoFontWinH2")
     title:SetText(GetString(SI_SHOPPING_LIST_TRIP_TITLE))
@@ -243,11 +246,17 @@ function ListTools:CreateTripWindow()
 end
 
 function ListTools:SetBulkStatus(message, isError)
+    if self.owner.accessibility then
+        message = self.owner.accessibility:FormatStatus(message, isError)
+    end
     self.bulkStatus:SetText(message or "")
     self.bulkStatus:SetColor(isError and 1 or 0.65, isError and 0.35 or 0.82, isError and 0.35 or 0.55, 1)
 end
 
 function ListTools:SetTripStatus(message, isError)
+    if self.owner.accessibility then
+        message = self.owner.accessibility:FormatStatus(message, isError)
+    end
     self.tripStatus:SetText(message or "")
     self.tripStatus:SetColor(isError and 1 or 0.65, isError and 0.35 or 0.82, isError and 0.35 or 0.55, 1)
 end
@@ -278,6 +287,7 @@ function ListTools:AddBulkItems()
     self:CloseBulkWindow()
     self.owner.ui:Refresh()
     self.owner.gamepad:Refresh()
+    self.owner:RefreshInventory()
     self.owner.ui:SetStatus(zo_strformat(
         GetString(SI_SHOPPING_LIST_BULK_ADDED),
         #entries

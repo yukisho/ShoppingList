@@ -18,7 +18,7 @@ local NORTH_AMERICAN_MEGASERVER = "NA Megaserver"
 
 local function makeLabel(parent, font)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
-    label:SetFont(font or "ZoFontGame")
+    ShoppingListAccessibility:SetFont(label, font or "ZoFontGame")
     label:SetColor(0.9, 0.9, 0.9, 1)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
@@ -27,7 +27,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 28)
-    button:SetFont("ZoFontGame")
+    ShoppingListAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
     button:SetMouseOverFontColor(1, 1, 1, 1)
@@ -43,9 +43,28 @@ local function makeEdit(parent, width)
     edit:ClearAnchors()
     edit:SetAnchor(TOPLEFT, backdrop, TOPLEFT, 3, 2)
     edit:SetAnchor(BOTTOMRIGHT, backdrop, BOTTOMRIGHT, -3, -2)
+    ShoppingListAccessibility:SetFont(edit, "ZoFontGame")
     edit:SetMaxInputChars(100)
     edit:SetNewLineEnabled(false)
     edit:SetSelectAllOnFocus(true)
+    return backdrop, edit
+end
+
+local function makeNoteEdit(parent, width, height)
+    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, parent, "ZO_EditBackdrop")
+    backdrop:SetDimensions(width, height)
+
+    local edit = WINDOW_MANAGER:CreateControlFromVirtual(
+        nil,
+        backdrop,
+        "ZO_DefaultEditMultiLineForBackdrop"
+    )
+    edit:ClearAnchors()
+    edit:SetAnchor(TOPLEFT, backdrop, TOPLEFT, 5, 4)
+    edit:SetAnchor(BOTTOMRIGHT, backdrop, BOTTOMRIGHT, -5, -4)
+    ShoppingListAccessibility:SetFont(edit, "ZoFontGame")
+    edit:SetMaxInputChars(ShoppingListData.MAX_NOTE_LENGTH)
+    edit:SetNewLineEnabled(true)
     return backdrop, edit
 end
 
@@ -115,6 +134,7 @@ function UI:Initialize()
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.96)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.9)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop, { 0.035, 0.035, 0.045, 0.96 }, { 0.5, 0.42, 0.28, 0.9 })
 
     local title = makeLabel(window, "ZoFontWinH2")
     title:SetText(GetString(SI_SHOPPING_LIST_TITLE))
@@ -373,7 +393,7 @@ end
 
 function UI:CreateListDialog()
     local dialog = WINDOW_MANAGER:CreateTopLevelWindow("ShoppingListNameWindow")
-    dialog:SetDimensions(420, 290)
+    dialog:SetDimensions(420, 420)
     dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     dialog:SetClampedToScreen(true)
     dialog:SetMouseEnabled(true)
@@ -385,6 +405,7 @@ function UI:CreateListDialog()
     backdrop:SetAnchorFill(dialog)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop)
 
     self.listDialogTitle = makeLabel(dialog, "ZoFontWinH2")
     self.listDialogTitle:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 10)
@@ -468,6 +489,17 @@ function UI:CreateListDialog()
     clear:SetHandler("OnClicked", function() self:ClearCompletedItems() end)
     self.listDialogClearCompleted = clear
 
+    self.listDialogNoteLabel = makeLabel(dialog, "ZoFontGame")
+    self.listDialogNoteLabel:SetText(GetString(SI_SHOPPING_LIST_LIST_NOTE))
+    self.listDialogNoteLabel:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 202)
+    self.listDialogNoteLabel:SetDimensions(384, 26)
+
+    local noteBackdrop, noteEdit = makeNoteEdit(dialog, 384, 100)
+    noteBackdrop:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 230)
+    noteEdit:SetHandler("OnEscape", function() self:CloseListDialog() end)
+    self.listDialogNoteBackdrop = noteBackdrop
+    self.listDialogNote = noteEdit
+
     local duplicate = makeButton(dialog, GetString(SI_SHOPPING_LIST_BUTTON_DUPLICATE), 90)
     duplicate:SetAnchor(BOTTOMLEFT, dialog, BOTTOMLEFT, 18, -16)
     duplicate:SetHidden(true)
@@ -486,6 +518,7 @@ end
 
 function UI:CloseListDialog()
     self.listDialogName:LoseFocus()
+    self.listDialogNote:LoseFocus()
     self.listDialog:SetHidden(true)
 end
 
@@ -559,7 +592,7 @@ function UI:ArchiveCurrentList()
     self.offset = 0
     self.listSignature = nil
     if self.owner.editor then
-        self.owner.editor.window:SetHidden(true)
+        self.owner.editor:Hide()
     end
     if self.owner.history then
         self.owner.history:Hide()
@@ -567,6 +600,7 @@ function UI:ArchiveCurrentList()
     self:CloseBudgetDialog()
     self:CloseListDialog()
     self:Refresh()
+    self.owner:RefreshInventory()
     if self.owner.archive then
         self.owner.archive:Refresh()
     end
@@ -590,6 +624,7 @@ function UI:CreateBudgetDialog()
     backdrop:SetAnchorFill(dialog)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop)
 
     local title = makeLabel(dialog, "ZoFontWinH2")
     title:SetText(GetString(SI_SHOPPING_LIST_BUDGET_TITLE))
@@ -684,6 +719,7 @@ function UI:RefreshListSelector()
         signature[#signature + 1] = table.concat({
             tostring(list.id),
             list.name,
+            list.note or "",
             tostring(list.tripActive),
             tostring(tripEnabled),
         }, ":")
@@ -695,23 +731,31 @@ function UI:RefreshListSelector()
         self.listCombo:ClearItems()
         for _, list in ipairs(lists) do
             local listId = list.id
+            local displayName = list.note and list.note ~= "" and zo_strformat(
+                GetString(SI_SHOPPING_LIST_NOTE_MARKER),
+                list.name
+            ) or list.name
             local label = tripEnabled and zo_strformat(
                 GetString(list.tripActive
                     and SI_SHOPPING_LIST_TRIP_LIST_ACTIVE
                     or SI_SHOPPING_LIST_TRIP_LIST_INACTIVE),
-                list.name
-            ) or list.name
+                displayName
+            ) or displayName
             self.listCombo:AddItem(self.listCombo:CreateItemEntry(label, function()
                 self:SelectList(listId)
             end))
         end
     end
+    local currentName = current.note and current.note ~= "" and zo_strformat(
+        GetString(SI_SHOPPING_LIST_NOTE_MARKER),
+        current.name
+    ) or current.name
     local selectedLabel = tripEnabled and zo_strformat(
         GetString(current.tripActive
             and SI_SHOPPING_LIST_TRIP_LIST_ACTIVE
             or SI_SHOPPING_LIST_TRIP_LIST_INACTIVE),
-        current.name
-    ) or current.name
+        currentName
+    ) or currentName
     self.listCombo:SetSelectedItem(selectedLabel)
     self.deleteListButton:SetEnabled(#lists > 1)
 end
@@ -722,7 +766,7 @@ function UI:SelectList(id)
     end
     self.offset = 0
     if self.owner.editor then
-        self.owner.editor.window:SetHidden(true)
+        self.owner.editor:Hide()
     end
     if self.owner.history then
         self.owner.history:Hide()
@@ -747,14 +791,19 @@ function UI:OpenListDialog(mode)
     self.listDialogBulk:SetHidden(mode ~= "rename")
     self.listDialogUndo:SetHidden(mode ~= "rename")
     self.listDialogClearCompleted:SetHidden(mode ~= "rename")
+    self.listDialogNoteLabel:SetHidden(mode == "delete")
+    self.listDialogNoteBackdrop:SetHidden(mode == "delete")
+    self.listDialog:SetHeight(mode == "delete" and 290 or 420)
 
     if mode == "new" then
         self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_NEW_LIST_TITLE))
         self.listDialogName:SetText("")
+        self.listDialogNote:SetText("")
         self.listDialogConfirm:SetText(GetString(SI_SHOPPING_LIST_BUTTON_CREATE))
     elseif mode == "rename" then
         self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_GAMEPAD_MANAGE_TITLE))
         self.listDialogName:SetText(current.name)
+        self.listDialogNote:SetText(current.note or "")
         self.listDialogConfirm:SetText(GetString(SI_SHOPPING_LIST_BUTTON_SAVE))
     elseif mode == "duplicate" then
         local baseName = zo_strformat(
@@ -769,6 +818,7 @@ function UI:OpenListDialog(mode)
         end
         self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_DUPLICATE_LIST_TITLE))
         self.listDialogName:SetText(name)
+        self.listDialogNote:SetText(current.note or "")
         self.listDialogConfirm:SetText(GetString(SI_SHOPPING_LIST_BUTTON_DUPLICATE))
     else
         if #self.owner.data:GetLists() == 1 then
@@ -795,7 +845,10 @@ function UI:CompleteListDialog()
     local current = self.owner.data:GetCurrentList()
     local status
     if mode == "new" then
-        local list, message = self.owner.data:AddList(self.listDialogName:GetText())
+        local list, message = self.owner.data:AddList(
+            self.listDialogName:GetText(),
+            self.listDialogNote:GetText()
+        )
         if not list then
             self:SetStatus(message, true)
             return
@@ -806,10 +859,12 @@ function UI:CompleteListDialog()
             self:SetStatus(message, true)
             return
         end
+        self.owner.data:UpdateListNote(current.id, self.listDialogNote:GetText())
     elseif mode == "duplicate" then
         local list, message = self.owner.data:DuplicateList(
             current.id,
-            self.listDialogName:GetText()
+            self.listDialogName:GetText(),
+            self.listDialogNote:GetText()
         )
         if not list then
             self:SetStatus(message, true)
@@ -832,7 +887,7 @@ function UI:CompleteListDialog()
 
     self.offset = 0
     if self.owner.editor then
-        self.owner.editor.window:SetHidden(true)
+        self.owner.editor:Hide()
     end
     if self.owner.history then
         self.owner.history:Hide()
@@ -840,6 +895,7 @@ function UI:CompleteListDialog()
     self:CloseBudgetDialog()
     self:CloseListDialog()
     self:Refresh()
+    self.owner:RefreshInventory()
     self:SetStatus(status or GetString(SI_SHOPPING_LIST_STATUS_LISTS_UPDATED))
 end
 
@@ -1027,6 +1083,9 @@ function UI:AddFromInput()
 end
 
 function UI:SetStatus(text, isError)
+    if self.owner.accessibility then
+        text = self.owner.accessibility:FormatStatus(text, isError)
+    end
     self.status:SetText(text or "")
     if isError then
         self.status:SetColor(1, 0.35, 0.35, 1)
@@ -1078,18 +1137,24 @@ function UI:RefreshSummary(completed, total)
     end
 
     if list.budget then
-        self.summary:SetText(zo_strformat(
+        local summary = zo_strformat(
             GetString(SI_SHOPPING_LIST_SUMMARY_WITH_BUDGET),
             completed,
             total,
             formatCompactGold(list.totalSpent),
             formatCompactGold(list.budget)
-        ))
+        )
         if list.totalSpent > list.budget then
+            if self.owner.accessibility
+                and self.owner.accessibility:UsesNonColorIndicators()
+            then
+                summary = summary .. " [!]"
+            end
             self.summary:SetColor(1, 0.35, 0.3, 1)
         else
             self.summary:SetColor(0.85, 0.78, 0.62, 1)
         end
+        self.summary:SetText(summary)
     else
         self.summary:SetText(zo_strformat(
             GetString(SI_SHOPPING_LIST_SUMMARY_SPENT),
@@ -1134,17 +1199,37 @@ function UI:Refresh()
             row.toggle:SetText(item.completed and "[x]" or "[ ]")
             local sourceList = self.owner.data:GetListForItem(item.id)
             if self.owner.data:IsMultiListTripEnabled() and sourceList then
-                row.name:SetText(zo_strformat(
+                local itemName = zo_strformat(
                     GetString(SI_SHOPPING_LIST_TRIP_ITEM_NAME),
                     sourceList.name,
                     item.name
-                ))
+                )
+                row.name:SetText(item.note and item.note ~= "" and zo_strformat(
+                    GetString(SI_SHOPPING_LIST_NOTE_MARKER),
+                    itemName
+                ) or itemName)
             else
-                row.name:SetText(item.name)
+                row.name:SetText(item.note and item.note ~= "" and zo_strformat(
+                    GetString(SI_SHOPPING_LIST_NOTE_MARKER),
+                    item.name
+                ) or item.name)
             end
-            local progress = string.format("%d / %d", item.purchased, item.desired)
+            local owned = self.owner.inventory and self.owner.inventory:GetCounts(item)
+            local progress = zo_strformat(
+                GetString(SI_SHOPPING_LIST_INVENTORY_PROGRESS),
+                item.purchased,
+                item.desired,
+                owned and owned.total or 0
+            )
+            local isOverTarget = self.owner.data:ItemIsOverTarget(item)
             if item.maxUnitPrice then
                 progress = progress .. "\n≤ " .. formatCompactGold(item.maxUnitPrice)
+                if isOverTarget
+                    and self.owner.accessibility
+                    and self.owner.accessibility:UsesNonColorIndicators()
+                then
+                    progress = progress .. " [!]"
+                end
             end
             row.progress:SetText(progress)
             row.find:SetHidden(not canSearch)
@@ -1157,19 +1242,20 @@ function UI:Refresh()
             row.progress:ClearAnchors()
             row.progress:SetAnchor(RIGHT, row.edit, LEFT, -3, 0)
             if item.completed then
-                row.name:SetColor(0.5, 0.5, 0.5, 1)
+                local dim = self.owner.accessibility
+                    and self.owner.accessibility:UsesHighContrast()
+                    and 0.72 or 0.5
+                row.name:SetColor(dim, dim, dim, 1)
             else
                 row.name:SetColor(0.92, 0.92, 0.92, 1)
             end
-            local history = item.purchaseHistory or {}
-            local lastPurchase = history[#history]
-            if item.maxUnitPrice
-                and lastPurchase
-                and (tonumber(lastPurchase.unitPrice) or 0) > item.maxUnitPrice
-            then
+            if isOverTarget then
                 row.progress:SetColor(1, 0.4, 0.3, 1)
             elseif item.completed then
-                row.progress:SetColor(0.5, 0.5, 0.5, 1)
+                local dim = self.owner.accessibility
+                    and self.owner.accessibility:UsesHighContrast()
+                    and 0.72 or 0.5
+                row.progress:SetColor(dim, dim, dim, 1)
             else
                 row.progress:SetColor(0.9, 0.9, 0.9, 1)
             end
@@ -1386,6 +1472,9 @@ function UI:Hide()
     self.suggestionPanel:SetHidden(true)
     ClearTooltip(InformationTooltip)
     self:CloseListDialog()
+    if self.owner.editor then
+        self.owner.editor:Hide()
+    end
     if self.owner.history then
         self.owner.history:Hide()
     end
@@ -1394,6 +1483,9 @@ function UI:Hide()
     end
     if self.owner.share then
         self.owner.share:Hide()
+    end
+    if self.owner.backup then
+        self.owner.backup:Hide()
     end
     if self.owner.help then
         self.owner.help:Hide()

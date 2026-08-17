@@ -8,7 +8,7 @@ local ROW_HEIGHT = 27
 
 local function makeLabel(parent, font)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
-    label:SetFont(font or "ZoFontGame")
+    ShoppingListAccessibility:SetFont(label, font or "ZoFontGame")
     label:SetColor(0.9, 0.9, 0.9, 1)
     label:SetVerticalAlignment(TEXT_ALIGN_CENTER)
     return label
@@ -17,7 +17,7 @@ end
 local function makeButton(parent, text, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetDimensions(width, 30)
-    button:SetFont("ZoFontGame")
+    ShoppingListAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
     button:SetMouseOverFontColor(1, 1, 1, 1)
@@ -75,6 +75,7 @@ function History:Initialize()
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop)
 
     local title = makeLabel(window, "ZoFontWinH2")
     title:SetText(GetString(SI_SHOPPING_LIST_HISTORY_TITLE))

@@ -34,17 +34,23 @@ end
 
 function addon:Initialize()
     self.data = ShoppingListData:New()
+    self.accessibility = ShoppingListAccessibility
+    self.accessibility:Initialize(self)
     self.matcher = ShoppingListMatcher
     self.ui = ShoppingListUI:New(self)
     self.ui:Initialize()
     self.gamepad = ShoppingListGamepad:New(self)
     self.gamepad:Initialize()
+    self.inventory = ShoppingListInventory:New(self)
+    self.inventory:Initialize()
     self.history = ShoppingListHistory:New(self)
     self.history:Initialize()
     self.archive = ShoppingListArchive:New(self)
     self.archive:Initialize()
     self.share = ShoppingListShare:New(self)
     self.share:Initialize()
+    self.backup = ShoppingListBackup:New(self)
+    self.backup:Initialize()
     self.editor = ShoppingListEditor:New(self)
     self.editor:Initialize()
     self.help = ShoppingListHelp:New(self)
@@ -124,8 +130,15 @@ function addon:AddItem(name, quantity, itemLink, nameHash)
     if item then
         self.ui:Refresh()
         self.gamepad:Refresh()
+        self:RefreshInventory()
     end
     return item, message
+end
+
+function addon:RefreshInventory()
+    if self.inventory then
+        self.inventory:QueueRefresh(0)
+    end
 end
 
 function addon:RemoveItem(id)

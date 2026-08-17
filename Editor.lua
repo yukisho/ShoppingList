@@ -2,11 +2,11 @@ ShoppingListEditor = {}
 
 local Editor = ShoppingListEditor
 local WINDOW_WIDTH = 460
-local WINDOW_HEIGHT = 535
+local WINDOW_HEIGHT = 690
 
 local function makeLabel(parent, text, x, y, width)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
-    label:SetFont("ZoFontGame")
+    ShoppingListAccessibility:SetFont(label, "ZoFontGame")
     label:SetColor(0.86, 0.82, 0.72, 1)
     label:SetText(text)
     label:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
@@ -24,6 +24,7 @@ local function makeEdit(parent, x, y, width, numeric, maxChars)
     edit:ClearAnchors()
     edit:SetAnchor(TOPLEFT, backdrop, TOPLEFT, 3, 2)
     edit:SetAnchor(BOTTOMRIGHT, backdrop, BOTTOMRIGHT, -3, -2)
+    ShoppingListAccessibility:SetFont(edit, "ZoFontGame")
     edit:SetMaxInputChars(maxChars or (numeric and 4 or 100))
     edit:SetNewLineEnabled(false)
     edit:SetSelectAllOnFocus(true)
@@ -33,11 +34,30 @@ local function makeEdit(parent, x, y, width, numeric, maxChars)
     return edit
 end
 
+local function makeNoteEdit(parent, x, y, width, height)
+    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, parent, "ZO_EditBackdrop")
+    backdrop:SetAnchor(TOPLEFT, parent, TOPLEFT, x, y)
+    backdrop:SetDimensions(width, height)
+
+    local edit = WINDOW_MANAGER:CreateControlFromVirtual(
+        nil,
+        backdrop,
+        "ZO_DefaultEditMultiLineForBackdrop"
+    )
+    edit:ClearAnchors()
+    edit:SetAnchor(TOPLEFT, backdrop, TOPLEFT, 5, 4)
+    edit:SetAnchor(BOTTOMRIGHT, backdrop, BOTTOMRIGHT, -5, -4)
+    ShoppingListAccessibility:SetFont(edit, "ZoFontGame")
+    edit:SetMaxInputChars(ShoppingListData.MAX_NOTE_LENGTH)
+    edit:SetNewLineEnabled(true)
+    return edit
+end
+
 local function makeButton(parent, text, x, width)
     local button = WINDOW_MANAGER:CreateControl(nil, parent, CT_BUTTON)
     button:SetAnchor(BOTTOMLEFT, parent, BOTTOMLEFT, x, -16)
     button:SetDimensions(width, 30)
-    button:SetFont("ZoFontGame")
+    ShoppingListAccessibility:SetFont(button, "ZoFontGame")
     button:SetText(text)
     button:SetNormalFontColor(0.85, 0.78, 0.62, 1)
     button:SetMouseOverFontColor(1, 1, 1, 1)
@@ -140,6 +160,7 @@ function Editor:Initialize()
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
+    ShoppingListAccessibility:RegisterBackdrop(backdrop)
 
     local title = makeLabel(
         window,
@@ -148,7 +169,7 @@ function Editor:Initialize()
         10,
         WINDOW_WIDTH - 36
     )
-    title:SetFont("ZoFontWinH2")
+    ShoppingListAccessibility:SetFont(title, "ZoFontWinH2")
 
     self.itemName = makeLabel(window, "", 18, 44, WINDOW_WIDTH - 36)
     self.itemName:SetColor(1, 1, 1, 1)
@@ -181,19 +202,26 @@ function Editor:Initialize()
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_GOLD_NONE), 302, 326, 140)
 
     self.purchaseSummary = makeLabel(window, "", 18, 366, WINDOW_WIDTH - 36)
-    self.purchaseSummary:SetFont("ZoFontGameSmall")
+    ShoppingListAccessibility:SetFont(self.purchaseSummary, "ZoFontGameSmall")
     self.purchaseSummary:SetColor(0.75, 0.82, 0.65, 1)
     self.purchaseSummary:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     self.purchaseSummary:SetHeight(44)
+
+    self.ownedSummary = makeLabel(window, "", 18, 408, WINDOW_WIDTH - 36)
+    ShoppingListAccessibility:SetFont(self.ownedSummary, "ZoFontGameSmall")
+    self.ownedSummary:SetColor(0.75, 0.82, 0.9, 1)
+
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_NOTE), 18, 442, 120)
+    self.note = makeNoteEdit(window, 18, 472, WINDOW_WIDTH - 36, 100)
 
     local hint = makeLabel(
         window,
         GetString(SI_SHOPPING_LIST_EDITOR_HINT),
         18,
-        414,
+        586,
         WINDOW_WIDTH - 36
     )
-    hint:SetFont("ZoFontGameSmall")
+    ShoppingListAccessibility:SetFont(hint, "ZoFontGameSmall")
     hint:SetColor(0.65, 0.65, 0.65, 1)
 
     self.historyButton = makeButton(window, GetString(SI_SHOPPING_LIST_BUTTON_HISTORY), 18, 80)
@@ -210,7 +238,7 @@ function Editor:Initialize()
     local save = makeButton(window, GetString(SI_SHOPPING_LIST_BUTTON_SAVE), 282, 70)
     save:SetHandler("OnClicked", function() self:Save() end)
     local cancel = makeButton(window, GetString(SI_SHOPPING_LIST_BUTTON_CANCEL), 360, 82)
-    cancel:SetHandler("OnClicked", function() self.window:SetHidden(true) end)
+    cancel:SetHandler("OnClicked", function() self:Hide() end)
 
     setChoices(self.qualityMode, {
         { label = GetString(SI_SHOPPING_LIST_CHOICE_ANY), value = "any" },
@@ -238,8 +266,18 @@ function Editor:Open(item)
     self.level:SetText(tostring(rule.level or 1))
     self.championPoints:SetText(tostring(rule.championPoints or 0))
     self.maxUnitPrice:SetText(item.maxUnitPrice and tostring(item.maxUnitPrice) or "")
+    self.note:SetText(item.note or "")
     self.historyButton:SetEnabled(#(item.purchaseHistory or {}) > 0)
     self:UpdateMoveButtons()
+
+    local owned = self.owner.inventory and self.owner.inventory:GetCounts(item)
+    self.ownedSummary:SetText(zo_strformat(
+        GetString(SI_SHOPPING_LIST_INVENTORY_BREAKDOWN),
+        owned and owned.total or 0,
+        owned and owned.backpack or 0,
+        owned and owned.bank or 0,
+        owned and owned.craftBag or 0
+    ))
 
     local history = item.purchaseHistory or {}
     local totalSpent = tonumber(item.totalSpent) or 0
@@ -293,6 +331,11 @@ function Editor:Open(item)
     self.window:SetHidden(false)
 end
 
+function Editor:Hide()
+    self.note:LoseFocus()
+    self.window:SetHidden(true)
+end
+
 function Editor:UpdateMoveButtons()
     if not self.item then
         self.moveUp:SetEnabled(false)
@@ -329,16 +372,19 @@ function Editor:Save()
         levelMode = self.levelMode.selectedValue,
         level = self.level:GetText(),
         championPoints = self.championPoints:GetText(),
+        note = self.note:GetText(),
     })
     if not ok then
         self.owner.ui:SetStatus(message, true)
         return
     end
 
-    self.window:SetHidden(true)
+    self:Hide()
     self.owner.ui:SetStatus(zo_strformat(
         GetString(SI_SHOPPING_LIST_STATUS_ITEM_UPDATED),
         self.item.name
     ))
     self.owner.ui:Refresh()
+    self.owner.gamepad:Refresh()
+    self.owner:RefreshInventory()
 end

@@ -31,6 +31,11 @@ function Gamepad:Initialize()
     self.summary = self.control:GetNamedChild("Summary")
     self.status = self.control:GetNamedChild("Status")
     self.control:GetNamedChild("Title"):SetText(GetString(SI_SHOPPING_LIST_TITLE))
+    ShoppingListAccessibility:RegisterBackdrop(
+        self.control:GetNamedChild("Backdrop"),
+        { 0.035, 0.035, 0.045, 0.96 },
+        { 0.5, 0.42, 0.28, 0.9 }
+    )
 
     local listControl = self.control:GetNamedChild("List")
     self.list = ZO_GamepadVerticalItemParametricScrollList:New(listControl)
@@ -325,6 +330,9 @@ function Gamepad:HideForStore()
 end
 
 function Gamepad:SetStatus(message, isError)
+    if self.owner.accessibility then
+        message = self.owner.accessibility:FormatStatus(message, isError)
+    end
     self.status:SetText(message or "")
     if isError then
         self.status:SetColor(1, 0.35, 0.35, 1)
@@ -350,14 +358,18 @@ function Gamepad:Refresh(force)
     local selectedIndex
     local current = self.owner.data:GetCurrentList()
     local shoppingLists = self.owner.data:GetShoppingLists()
+    local currentName = current.note and current.note ~= "" and zo_strformat(
+        GetString(SI_SHOPPING_LIST_NOTE_MARKER),
+        current.name
+    ) or current.name
     if self.owner.data:IsMultiListTripEnabled() then
         self.listName:SetText(zo_strformat(
             GetString(SI_SHOPPING_LIST_GAMEPAD_TRIP_HEADING),
-            current.name,
+            currentName,
             #shoppingLists
         ))
     else
-        self.listName:SetText(current.name)
+        self.listName:SetText(currentName)
     end
 
     local completed = 0
@@ -373,7 +385,13 @@ function Gamepad:Refresh(force)
     end
     self.list:Clear()
     for index, item in ipairs(self.owner.data:GetFilteredShoppingItems()) do
-        local entry = ZO_GamepadEntryData:New(item.name)
+        local itemName = item.name
+        if self.owner.accessibility
+            and self.owner.accessibility:UsesNonColorIndicators()
+        then
+            itemName = (item.completed and "[x] " or "[ ] ") .. itemName
+        end
+        local entry = ZO_GamepadEntryData:New(itemName)
         entry.item = item
         entry:SetFontScaleOnSelection(false)
         entry:SetShowUnselectedSublabels(true)
@@ -382,6 +400,20 @@ function Gamepad:Refresh(force)
             item.purchased,
             item.desired
         ))
+        local owned = self.owner.inventory and self.owner.inventory:GetCounts(item)
+        entry:AddSubLabel(zo_strformat(
+            GetString(SI_SHOPPING_LIST_GAMEPAD_ITEM_OWNED),
+            owned and owned.total or 0,
+            owned and owned.backpack or 0,
+            owned and owned.bank or 0,
+            owned and owned.craftBag or 0
+        ))
+        if item.note and item.note ~= "" then
+            entry:AddSubLabel(zo_strformat(
+                GetString(SI_SHOPPING_LIST_GAMEPAD_ITEM_NOTE),
+                item.note
+            ))
+        end
         if self.owner.data:IsMultiListTripEnabled() then
             local sourceList = self.owner.data:GetListForItem(item.id)
             if sourceList then
@@ -396,8 +428,16 @@ function Gamepad:Refresh(force)
                 GetString(SI_SHOPPING_LIST_GAMEPAD_PRICE_TARGET),
                 formatCompactGold(item.maxUnitPrice)
             ))
+            if self.owner.data:ItemIsOverTarget(item)
+                and self.owner.accessibility
+                and self.owner.accessibility:UsesNonColorIndicators()
+            then
+                entry:AddSubLabel(GetString(SI_SHOPPING_LIST_ACCESSIBILITY_OVER_TARGET))
+            end
         end
-        if item.completed then
+        if item.completed and not (self.owner.accessibility
+            and self.owner.accessibility:UsesHighContrast())
+        then
             entry:SetNameColors(ZO_DISABLED_TEXT, ZO_DISABLED_TEXT)
         end
         self.list:AddEntry("ZO_GamepadMenuEntryTemplate", entry)
