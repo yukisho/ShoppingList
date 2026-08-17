@@ -1,0 +1,7 @@
+.history/
+.readme/
+*.jpeg
+*.md
+*.txt
+.npm-cache/
+.lua-lint/
