@@ -126,7 +126,24 @@ function addon:ToggleWindow()
 end
 
 function addon:AddItem(name, quantity, itemLink, nameHash)
-    local item, message = self.data:AddItem(name, quantity, itemLink, nameHash)
+    return self:AddItemToList(
+        self.data:GetCurrentList().id,
+        name,
+        quantity,
+        itemLink,
+        nameHash
+    )
+end
+
+function addon:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
+    local item, message = self.data:AddItemToList(
+        listId,
+        name,
+        quantity,
+        itemLink,
+        nameHash,
+        note
+    )
     if item then
         self.ui:Refresh()
         self.gamepad:Refresh()

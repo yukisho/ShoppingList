@@ -762,7 +762,12 @@ function Data:GetFilteredShoppingItems()
     return result
 end
 
-function Data:AddItem(name, quantity, itemLink, nameHash)
+function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
+    local list = self:FindList(listId)
+    if not list then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+
     name = zo_strtrim(name or "")
     quantity = math.max(1, math.floor(tonumber(quantity) or 1))
 
@@ -777,7 +782,7 @@ function Data:AddItem(name, quantity, itemLink, nameHash)
     local item = {
         id = self.saved.nextItemId,
         name = zo_strformat(SI_TOOLTIP_ITEM_NAME, name),
-        note = "",
+        note = normalizeNote(note),
         normalizedName = normalizeName(name),
         nameHash = nameHash,
         itemLink = itemLink or "",
@@ -803,8 +808,18 @@ function Data:AddItem(name, quantity, itemLink, nameHash)
     }
 
     self.saved.nextItemId = self.saved.nextItemId + 1
-    table.insert(self:GetItems(), item)
+    table.insert(list.items, item)
     return item
+end
+
+function Data:AddItem(name, quantity, itemLink, nameHash)
+    return self:AddItemToList(
+        self:GetCurrentList().id,
+        name,
+        quantity,
+        itemLink,
+        nameHash
+    )
 end
 
 function Data:UpdateItem(id, values)

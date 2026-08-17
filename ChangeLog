@@ -1,3 +1,8 @@
+0.16.3
+• Added a versioned public API that allows other add-ons to add linked or name-only items to active shopping lists.
+• Added safe list discovery, current-list defaults, optional notes, and stable API error codes.
+• Added developer integration documentation and ESOUI-ready BBCode examples.
+
 0.16.2
 • Added an option to add linked chat items to the current shopping list from their right-click menu.
 
