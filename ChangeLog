@@ -1,0 +1,27 @@
+0.15.3
+• Minor bug fixes and improvements.
+
+0.15.2
+• Added an in-game chat warning that names any required libraries that are missing.
+
+0.15.1
+• Lists can now be archived whether they are unfinished, completed, or empty.
+• Corrected the Archive button appearing unresponsive for unfinished lists.
+
+0.15.0
+• Added in-game help and recent release notes for keyboard and gamepad.
+• Added the /shoppinglisthelp command and a ? button in the main window.
+
+0.14.0
+• Added the gamepad Manage menu.
+• Added controller editing for matching rules and price targets.
+• Added controller archive, restore, share, and import workflows.
+
+0.13.6
+• Corrected Import dialog layering above the Share window.
+
+0.13.5
+• Added the optional NA-only in-game donation-mail shortcut.
+
+0.13.4
+• Added a dedicated import paste dialog and item-removal confirmation.
