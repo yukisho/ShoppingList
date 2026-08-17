@@ -1,3 +1,6 @@
+0.16.2
+• Added an option to add linked chat items to the current shopping list from their right-click menu.
+
 0.16.1
 • Restored the Trait, Quality Rule, Quality, and Level Rule dropdowns in the keyboard item editor.
 • Corrected Craft Bag quantities by enumerating virtual bag slots with their sparse slot IDs.
