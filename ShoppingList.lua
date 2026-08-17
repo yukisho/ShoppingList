@@ -1,9 +1,19 @@
 ShoppingList = {
     name = "ShoppingList",
-    version = "0.15.1",
+    version = "0.15.2",
 }
 
 local addon = ShoppingList
+local REQUIRED_LIBRARIES = {
+    {
+        name = "LibAddonMenu-2.0",
+        isAvailable = function() return LibAddonMenu2 ~= nil end,
+    },
+    {
+        name = "LibMainMenu-2.0",
+        isAvailable = function() return LibMainMenu2 ~= nil end,
+    },
+}
 
 local function formatGold(value)
     value = math.floor((tonumber(value) or 0) + 0.5)
@@ -179,6 +189,21 @@ local function onAddOnLoaded(_, name)
         return
     end
     EVENT_MANAGER:UnregisterForEvent("ShoppingList_Loaded", EVENT_ADD_ON_LOADED)
+
+    local missing = {}
+    for _, library in ipairs(REQUIRED_LIBRARIES) do
+        if not library.isAvailable() then
+            missing[#missing + 1] = library.name
+        end
+    end
+    if #missing > 0 then
+        d(zo_strformat(
+            GetString(SI_SHOPPING_LIST_CHAT_MISSING_LIBRARIES),
+            table.concat(missing, ", ")
+        ))
+        return
+    end
+
     addon:Initialize()
 end
 
