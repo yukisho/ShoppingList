@@ -237,6 +237,7 @@ function UI:Initialize()
     self:CreateBudgetDialog()
     self:InitializeDialogs()
     self:RegisterAutocompleteEvent()
+    self:RegisterFocusEvent()
     self:RestorePosition()
     self:Layout(window:GetDimensions())
 end
@@ -270,7 +271,7 @@ function UI:InitializeDialogs()
             },
         },
         finishedCallback = function()
-            self:RestoreMouseAfterDialog()
+            self:RestoreOwnedMouse()
         end,
     })
 end
@@ -1333,7 +1334,7 @@ function UI:AcquireMouse()
     end
 end
 
-function UI:RestoreMouseAfterDialog()
+function UI:RestoreOwnedMouse(delayMs)
     if not self.ownsUIMode or self.window:IsHidden() then
         return
     end
@@ -1346,7 +1347,19 @@ function UI:RestoreMouseAfterDialog()
         then
             SetGameCameraUIMode(true)
         end
-    end, 10)
+    end, delayMs or 10)
+end
+
+function UI:RegisterFocusEvent()
+    EVENT_MANAGER:RegisterForEvent(
+        "ShoppingList_GameFocusChanged",
+        EVENT_GAME_FOCUS_CHANGED,
+        function(_, hasFocus)
+            if hasFocus then
+                self:RestoreOwnedMouse(50)
+            end
+        end
+    )
 end
 
 function UI:ReleaseMouse()

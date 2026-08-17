@@ -6,6 +6,7 @@
 • Added optional merged shopping trips across selected active lists while keeping inactive lists untouched.
 • Kept the mouse cursor active after closing the item-removal confirmation while the shopping list remains open.
 • Corrected the Active Shopping Lists description layout so the full text wraps inside the window.
+• Restored the shopping-list cursor when returning to ESO after switching to another application.
 
 0.15.3
 • Minor bug fixes and improvements.
