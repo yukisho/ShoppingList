@@ -167,8 +167,32 @@ function UI:Initialize()
 
     self.page = makeLabel(window, "ZoFontGameSmall")
     self.page:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
-    self.page:SetAnchor(BOTTOM, window, BOTTOM, 0, -82)
-    self.page:SetDimensions(180, 20)
+    self.page:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, -14, -82)
+    self.page:SetDimensions(160, 20)
+
+    local filterContainer, filterCombo = makeCombo(window, 142)
+    filterContainer:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 14, -78)
+    local filterChoices = {
+        { label = GetString(SI_SHOPPING_LIST_FILTER_ALL), value = "all" },
+        { label = GetString(SI_SHOPPING_LIST_FILTER_NEEDED), value = "needed" },
+        { label = GetString(SI_SHOPPING_LIST_FILTER_COMPLETED), value = "completed" },
+        { label = GetString(SI_SHOPPING_LIST_FILTER_OVER_TARGET), value = "overTarget" },
+        { label = GetString(SI_SHOPPING_LIST_FILTER_RESTRICTED), value = "restricted" },
+    }
+    for _, choice in ipairs(filterChoices) do
+        local value = choice.value
+        filterCombo:AddItem(filterCombo:CreateItemEntry(choice.label, function()
+            self.owner.data:SetItemFilter(value)
+            self.offset = 0
+            self:Refresh()
+            self.owner.gamepad:Refresh()
+        end))
+    end
+    self.filterLabels = {}
+    for _, choice in ipairs(filterChoices) do
+        self.filterLabels[choice.value] = choice.label
+    end
+    self.filterCombo = filterCombo
 
     local nameBackdrop, nameEdit = makeEdit(window, 235)
     nameBackdrop:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 14, -48)
@@ -258,7 +282,7 @@ function UI:CreateListControls()
     add:SetAnchor(LEFT, container, RIGHT, 4, 0)
     add:SetHandler("OnClicked", function() self:OpenListDialog("new") end)
 
-    local rename = makeButton(self.window, GetString(SI_SHOPPING_LIST_BUTTON_RENAME), 70)
+    local rename = makeButton(self.window, GetString(SI_SHOPPING_LIST_GAMEPAD_MANAGE), 70)
     rename:SetAnchor(LEFT, add, RIGHT, 4, 0)
     rename:SetHandler("OnClicked", function() self:OpenListDialog("rename") end)
 
@@ -345,7 +369,7 @@ end
 
 function UI:CreateListDialog()
     local dialog = WINDOW_MANAGER:CreateTopLevelWindow("ShoppingListNameWindow")
-    dialog:SetDimensions(360, 250)
+    dialog:SetDimensions(420, 290)
     dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     dialog:SetClampedToScreen(true)
     dialog:SetMouseEnabled(true)
@@ -360,14 +384,14 @@ function UI:CreateListDialog()
 
     self.listDialogTitle = makeLabel(dialog, "ZoFontWinH2")
     self.listDialogTitle:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 10)
-    self.listDialogTitle:SetDimensions(324, 30)
+    self.listDialogTitle:SetDimensions(384, 30)
 
     self.listDialogMessage = makeLabel(dialog, "ZoFontGame")
     self.listDialogMessage:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 48)
-    self.listDialogMessage:SetDimensions(324, 42)
+    self.listDialogMessage:SetDimensions(384, 42)
     self.listDialogMessage:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
 
-    local nameBackdrop, nameEdit = makeEdit(dialog, 324)
+    local nameBackdrop, nameEdit = makeEdit(dialog, 384)
     nameBackdrop:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 52)
     nameEdit:SetMaxInputChars(60)
     nameEdit:SetHandler("OnEnter", function() self:CompleteListDialog() end)
@@ -416,6 +440,30 @@ function UI:CreateListDialog()
     end)
     self.listDialogShare = share
 
+    local trip = makeButton(dialog, GetString(SI_SHOPPING_LIST_BUTTON_TRIP), 72)
+    trip:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 165)
+    trip:SetHandler("OnClicked", function()
+        self.owner.listTools:OpenTripWindow()
+    end)
+    self.listDialogTrip = trip
+
+    local bulk = makeButton(dialog, GetString(SI_SHOPPING_LIST_BUTTON_BULK_ADD), 88)
+    bulk:SetAnchor(LEFT, trip, RIGHT, 8, 0)
+    bulk:SetHandler("OnClicked", function()
+        self.owner.listTools:OpenBulkWindow()
+    end)
+    self.listDialogBulk = bulk
+
+    local undo = makeButton(dialog, GetString(SI_SHOPPING_LIST_BUTTON_UNDO), 70)
+    undo:SetAnchor(LEFT, bulk, RIGHT, 8, 0)
+    undo:SetHandler("OnClicked", function() self:UndoLastDeletion() end)
+    self.listDialogUndo = undo
+
+    local clear = makeButton(dialog, GetString(SI_SHOPPING_LIST_BUTTON_CLEAR_COMPLETED), 120)
+    clear:SetAnchor(LEFT, undo, RIGHT, 8, 0)
+    clear:SetHandler("OnClicked", function() self:ClearCompletedItems() end)
+    self.listDialogClearCompleted = clear
+
     local duplicate = makeButton(dialog, GetString(SI_SHOPPING_LIST_BUTTON_DUPLICATE), 90)
     duplicate:SetAnchor(BOTTOMLEFT, dialog, BOTTOMLEFT, 18, -16)
     duplicate:SetHidden(true)
@@ -446,9 +494,42 @@ end
 
 function UI:UpdateListArchiveButtons()
     self.listDialogArchive:SetEnabled(true)
+    self.listDialogUndo:SetEnabled(self.owner.data:CanUndoDeletion())
+    local completed = 0
+    for _, item in ipairs(self.owner.data:GetItems()) do
+        if item.completed then
+            completed = completed + 1
+        end
+    end
+    self.listDialogClearCompleted:SetEnabled(completed > 0)
     self.listDialogArchived:SetText(zo_strformat(
         GetString(SI_SHOPPING_LIST_ARCHIVED_COUNT),
         #self.owner.data:GetArchivedLists()
+    ))
+end
+
+function UI:UndoLastDeletion()
+    local ok, message = self.owner:UndoDeletion()
+    if not ok then
+        self:SetStatus(message, true)
+        return
+    end
+    self:CloseListDialog()
+    self:SetStatus(GetString(SI_SHOPPING_LIST_STATUS_UNDO_COMPLETE))
+end
+
+function UI:ClearCompletedItems()
+    local count = self.owner.data:ClearCompleted()
+    if count == 0 then
+        self:SetStatus(GetString(SI_SHOPPING_LIST_STATUS_NO_COMPLETED_ITEMS), true)
+        return
+    end
+    self:CloseListDialog()
+    self:Refresh()
+    self.owner.gamepad:Refresh()
+    self:SetStatus(zo_strformat(
+        GetString(SI_SHOPPING_LIST_STATUS_CLEARED_COMPLETED),
+        count
     ))
 end
 
@@ -594,8 +675,14 @@ function UI:RefreshListSelector()
     local current = self.owner.data:GetCurrentList()
     local lists = self.owner.data:GetLists()
     local signature = {}
+    local tripEnabled = self.owner.data:IsMultiListTripEnabled()
     for _, list in ipairs(lists) do
-        signature[#signature + 1] = tostring(list.id) .. ":" .. list.name
+        signature[#signature + 1] = table.concat({
+            tostring(list.id),
+            list.name,
+            tostring(list.tripActive),
+            tostring(tripEnabled),
+        }, ":")
     end
     signature = table.concat(signature, "|")
 
@@ -604,12 +691,24 @@ function UI:RefreshListSelector()
         self.listCombo:ClearItems()
         for _, list in ipairs(lists) do
             local listId = list.id
-            self.listCombo:AddItem(self.listCombo:CreateItemEntry(list.name, function()
+            local label = tripEnabled and zo_strformat(
+                GetString(list.tripActive
+                    and SI_SHOPPING_LIST_TRIP_LIST_ACTIVE
+                    or SI_SHOPPING_LIST_TRIP_LIST_INACTIVE),
+                list.name
+            ) or list.name
+            self.listCombo:AddItem(self.listCombo:CreateItemEntry(label, function()
                 self:SelectList(listId)
             end))
         end
     end
-    self.listCombo:SetSelectedItem(current.name)
+    local selectedLabel = tripEnabled and zo_strformat(
+        GetString(current.tripActive
+            and SI_SHOPPING_LIST_TRIP_LIST_ACTIVE
+            or SI_SHOPPING_LIST_TRIP_LIST_INACTIVE),
+        current.name
+    ) or current.name
+    self.listCombo:SetSelectedItem(selectedLabel)
     self.deleteListButton:SetEnabled(#lists > 1)
 end
 
@@ -640,13 +739,17 @@ function UI:OpenListDialog(mode)
     self.listDialogArchive:SetHidden(mode ~= "rename")
     self.listDialogArchived:SetHidden(mode ~= "rename")
     self.listDialogShare:SetHidden(mode ~= "rename")
+    self.listDialogTrip:SetHidden(mode ~= "rename")
+    self.listDialogBulk:SetHidden(mode ~= "rename")
+    self.listDialogUndo:SetHidden(mode ~= "rename")
+    self.listDialogClearCompleted:SetHidden(mode ~= "rename")
 
     if mode == "new" then
         self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_NEW_LIST_TITLE))
         self.listDialogName:SetText("")
         self.listDialogConfirm:SetText(GetString(SI_SHOPPING_LIST_BUTTON_CREATE))
     elseif mode == "rename" then
-        self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_RENAME_LIST_TITLE))
+        self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_GAMEPAD_MANAGE_TITLE))
         self.listDialogName:SetText(current.name)
         self.listDialogConfirm:SetText(GetString(SI_SHOPPING_LIST_BUTTON_SAVE))
     elseif mode == "duplicate" then
@@ -686,6 +789,7 @@ end
 function UI:CompleteListDialog()
     local mode = self.listDialogMode
     local current = self.owner.data:GetCurrentList()
+    local status
     if mode == "new" then
         local list, message = self.owner.data:AddList(self.listDialogName:GetText())
         if not list then
@@ -708,11 +812,16 @@ function UI:CompleteListDialog()
             return
         end
     elseif mode == "delete" then
+        local deletedName = current.name
         local ok, message = self.owner.data:DeleteList(current.id)
         if not ok then
             self:SetStatus(message, true)
             return
         end
+        status = zo_strformat(
+            GetString(SI_SHOPPING_LIST_STATUS_LIST_DELETED),
+            deletedName
+        )
     else
         return
     end
@@ -727,7 +836,7 @@ function UI:CompleteListDialog()
     self:CloseBudgetDialog()
     self:CloseListDialog()
     self:Refresh()
-    self:SetStatus(GetString(SI_SHOPPING_LIST_STATUS_LISTS_UPDATED))
+    self:SetStatus(status or GetString(SI_SHOPPING_LIST_STATUS_LISTS_UPDATED))
 end
 
 function UI:CreateRow(index)
@@ -923,14 +1032,7 @@ function UI:SetStatus(text, isError)
 end
 
 function UI:GetVisibleItems()
-    local result = {}
-    local showCompleted = self.owner.data:GetSettings().showCompleted
-    for _, item in ipairs(self.owner.data:GetItems()) do
-        if showCompleted or not item.completed then
-            result[#result + 1] = item
-        end
-    end
-    return result
+    return self.owner.data:GetFilteredShoppingItems()
 end
 
 function UI:GetRowCapacity()
@@ -939,6 +1041,28 @@ end
 
 function UI:RefreshSummary(completed, total)
     local list = self.owner.data:GetCurrentList()
+    if self.owner.data:IsMultiListTripEnabled() then
+        local lists = self.owner.data:GetShoppingLists()
+        local items = self.owner.data:GetShoppingItems()
+        completed = 0
+        local spent = 0
+        for _, item in ipairs(items) do
+            if item.completed then
+                completed = completed + 1
+            end
+        end
+        for _, activeList in ipairs(lists) do
+            spent = spent + (tonumber(activeList.totalSpent) or 0)
+        end
+        self.summary:SetText(zo_strformat(
+            GetString(SI_SHOPPING_LIST_SUMMARY_SPENT),
+            completed,
+            #items,
+            formatCompactGold(spent)
+        ))
+        self.summary:SetColor(0.9, 0.9, 0.9, 1)
+        return
+    end
     if completed == nil or total == nil then
         completed = 0
         total = #list.items
@@ -979,18 +1103,22 @@ function UI:Refresh()
     end
 
     self:RefreshListSelector()
+    self.filterCombo:SetSelectedItem(
+        self.filterLabels[self.owner.data:GetItemFilter()]
+            or self.filterLabels.all
+    )
     local capacity = self:GetRowCapacity()
     local items = self:GetVisibleItems()
     local maxOffset = math.max(0, #items - capacity)
     self.offset = zo_clamp(self.offset, 0, maxOffset)
 
     local completed = 0
-    for _, item in ipairs(self.owner.data:GetItems()) do
+    for _, item in ipairs(self.owner.data:GetShoppingItems()) do
         if item.completed then
             completed = completed + 1
         end
     end
-    self:RefreshSummary(completed, #self.owner.data:GetItems())
+    self:RefreshSummary(completed, #self.owner.data:GetShoppingItems())
 
     local canSearch = self.owner.ags and self.owner.ags:IsStoreReady()
     for rowIndex, row in ipairs(self.rows) do
@@ -1000,7 +1128,16 @@ function UI:Refresh()
         if item then
             local itemId = item.id
             row.toggle:SetText(item.completed and "[x]" or "[ ]")
-            row.name:SetText(item.name)
+            local sourceList = self.owner.data:GetListForItem(item.id)
+            if self.owner.data:IsMultiListTripEnabled() and sourceList then
+                row.name:SetText(zo_strformat(
+                    GetString(SI_SHOPPING_LIST_TRIP_ITEM_NAME),
+                    sourceList.name,
+                    item.name
+                ))
+            else
+                row.name:SetText(item.name)
+            end
             local progress = string.format("%d / %d", item.purchased, item.desired)
             if item.maxUnitPrice then
                 progress = progress .. "\n≤ " .. formatCompactGold(item.maxUnitPrice)
@@ -1228,6 +1365,9 @@ function UI:Hide()
     end
     if self.owner.help then
         self.owner.help:Hide()
+    end
+    if self.owner.listTools then
+        self.owner.listTools:Hide()
     end
     self:CloseBudgetDialog()
     self:ReleaseMouse()

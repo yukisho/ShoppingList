@@ -349,15 +349,30 @@ function Gamepad:Refresh(force)
     local selectedItemId = selectedItem and selectedItem.id
     local selectedIndex
     local current = self.owner.data:GetCurrentList()
-    self.listName:SetText(current.name)
+    local shoppingLists = self.owner.data:GetShoppingLists()
+    if self.owner.data:IsMultiListTripEnabled() then
+        self.listName:SetText(zo_strformat(
+            GetString(SI_SHOPPING_LIST_GAMEPAD_TRIP_HEADING),
+            current.name,
+            #shoppingLists
+        ))
+    else
+        self.listName:SetText(current.name)
+    end
 
     local completed = 0
-    self.list:Clear()
-    for index, item in ipairs(current.items) do
+    local shoppingItems = self.owner.data:GetShoppingItems()
+    local spent = 0
+    for _, list in ipairs(shoppingLists) do
+        spent = spent + (tonumber(list.totalSpent) or 0)
+    end
+    for _, item in ipairs(shoppingItems) do
         if item.completed then
             completed = completed + 1
         end
-
+    end
+    self.list:Clear()
+    for index, item in ipairs(self.owner.data:GetFilteredShoppingItems()) do
         local entry = ZO_GamepadEntryData:New(item.name)
         entry.item = item
         entry:SetFontScaleOnSelection(false)
@@ -367,6 +382,15 @@ function Gamepad:Refresh(force)
             item.purchased,
             item.desired
         ))
+        if self.owner.data:IsMultiListTripEnabled() then
+            local sourceList = self.owner.data:GetListForItem(item.id)
+            if sourceList then
+                entry:AddSubLabel(zo_strformat(
+                    GetString(SI_SHOPPING_LIST_GAMEPAD_SOURCE_LIST),
+                    sourceList.name
+                ))
+            end
+        end
         if item.maxUnitPrice then
             entry:AddSubLabel(zo_strformat(
                 GetString(SI_SHOPPING_LIST_GAMEPAD_PRICE_TARGET),
@@ -389,8 +413,8 @@ function Gamepad:Refresh(force)
     self.summary:SetText(zo_strformat(
         GetString(SI_SHOPPING_LIST_SUMMARY_SPENT),
         completed,
-        #current.items,
-        formatCompactGold(current.totalSpent)
+        #shoppingItems,
+        formatCompactGold(spent)
     ))
     self.dirty = false
     self:RefreshKeybinds()

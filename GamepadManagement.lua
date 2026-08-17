@@ -7,6 +7,13 @@ local SHARE_DIALOG = "SHOPPING_LIST_GAMEPAD_SHARE"
 local IMPORT_DIALOG = "SHOPPING_LIST_GAMEPAD_IMPORT"
 local HELP_DIALOG = "SHOPPING_LIST_GAMEPAD_HELP"
 local RELEASE_NOTES_DIALOG = "SHOPPING_LIST_GAMEPAD_RELEASE_NOTES"
+local LIST_NAME_DIALOG = "SHOPPING_LIST_GAMEPAD_LIST_NAME"
+local DELETE_LIST_DIALOG = "SHOPPING_LIST_GAMEPAD_DELETE_LIST"
+local BUDGET_DIALOG = "SHOPPING_LIST_GAMEPAD_BUDGET"
+local BULK_DIALOG = "SHOPPING_LIST_GAMEPAD_BULK_ADD"
+local TRIP_DIALOG = "SHOPPING_LIST_GAMEPAD_TRIP_LISTS"
+local FILTER_DIALOG = "SHOPPING_LIST_GAMEPAD_FILTER"
+local FILTER_ORDER = { "all", "needed", "completed", "overTarget", "restricted" }
 
 local function showError(message)
     ZO_Alert(UI_ALERT_CATEGORY_ERROR, SOUNDS.NEGATIVE_CLICK, message)
@@ -28,13 +35,16 @@ local function releaseAndOpen(dialogName, callback)
     zo_callLater(callback, 10)
 end
 
-local function actionEntry(text, callback, visible)
+local function actionEntry(text, callback, visible, enabled)
     local data = {
         setup = ZO_SharedGamepadEntry_OnSetup,
         callback = callback,
     }
     if visible then
         data.visible = visible
+    end
+    if enabled then
+        data.enabled = enabled
     end
     return {
         template = "ZO_GamepadMenuEntryTemplate",
@@ -142,6 +152,12 @@ end
 
 function Gamepad:InitializeManagementDialogs()
     self:InitializeManageDialog()
+    self:InitializeListNameDialog()
+    self:InitializeDeleteListDialog()
+    self:InitializeBudgetManagementDialog()
+    self:InitializeBulkManagementDialog()
+    self:InitializeTripManagementDialog()
+    self:InitializeFilterManagementDialog()
     self:InitializeEditDialog()
     self:InitializeArchivesDialog()
     self:InitializeShareDialog()
@@ -162,6 +178,86 @@ function Gamepad:InitializeManageDialog()
             text = SI_SHOPPING_LIST_GAMEPAD_MANAGE_HELP,
         },
         parametricList = {
+            actionEntry(
+                SI_SHOPPING_LIST_GAMEPAD_CREATE_LIST,
+                function() self:OpenListNameFromManagement("new") end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_RENAME,
+                function() self:OpenListNameFromManagement("rename") end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_DUPLICATE,
+                function() self:OpenListNameFromManagement("duplicate") end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_DELETE,
+                function() self:OpenDeleteListFromManagement() end,
+                nil,
+                function() return #self.owner.data:GetLists() > 1 end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_MOVE_UP,
+                function() self:MoveCurrentListFromManagement(-1) end,
+                nil,
+                function()
+                    local _, index = self.owner.data:FindList(
+                        self.owner.data:GetCurrentList().id
+                    )
+                    return index and index > 1
+                end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_MOVE_DOWN,
+                function() self:MoveCurrentListFromManagement(1) end,
+                nil,
+                function()
+                    local _, index = self.owner.data:FindList(
+                        self.owner.data:GetCurrentList().id
+                    )
+                    return index and index < #self.owner.data:GetLists()
+                end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_BUDGET,
+                function() self:OpenBudgetFromManagement() end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_CLEAR_COMPLETED,
+                function() self:ClearCompletedFromManagement() end,
+                nil,
+                function()
+                    for _, item in ipairs(self.owner.data:GetItems()) do
+                        if item.completed then
+                            return true
+                        end
+                    end
+                    return false
+                end
+            ),
+            actionEntry(
+                function()
+                    return zo_strformat(
+                        GetString(SI_SHOPPING_LIST_GAMEPAD_FILTER),
+                        self:GetGamepadFilterLabel()
+                    )
+                end,
+                function() self:OpenFilterFromManagement() end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_UNDO,
+                function() self:UndoFromManagement() end,
+                nil,
+                function() return self.owner.data:CanUndoDeletion() end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_BULK_ADD,
+                function() self:OpenBulkFromManagement() end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_TRIP,
+                function() self:OpenTripFromManagement() end
+            ),
             actionEntry(
                 SI_SHOPPING_LIST_GAMEPAD_EDIT_MATCHING,
                 function() self:OpenEditDialogFromManagement() end,
@@ -203,6 +299,256 @@ function Gamepad:InitializeManageDialog()
                 keybind = "DIALOG_NEGATIVE",
                 text = SI_DIALOG_CANCEL,
                 callback = cancelDialog(MANAGE_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeListNameDialog()
+    ZO_Dialogs_RegisterCustomDialog(LIST_NAME_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.PARAMETRIC,
+        },
+        setup = function(dialog)
+            self.pendingListMode = dialog.data.mode
+            local current = self.owner.data:GetCurrentList()
+            if self.pendingListMode == "new" then
+                self.pendingListName = ""
+            elseif self.pendingListMode == "duplicate" then
+                local baseName = zo_strformat(
+                    GetString(SI_SHOPPING_LIST_COPIED_LIST_NAME),
+                    current.name
+                )
+                self.pendingListName = self.owner.data:GetUniqueListName(baseName)
+            else
+                self.pendingListName = current.name
+            end
+            dialog:setupFunc()
+        end,
+        title = {
+            text = function(dialog)
+                local mode = dialog.data and dialog.data.mode
+                if mode == "new" then
+                    return GetString(SI_SHOPPING_LIST_NEW_LIST_TITLE)
+                elseif mode == "duplicate" then
+                    return GetString(SI_SHOPPING_LIST_DUPLICATE_LIST_TITLE)
+                end
+                return GetString(SI_SHOPPING_LIST_RENAME_LIST_TITLE)
+            end,
+        },
+        parametricList = {
+            textFieldEntry(SI_SHOPPING_LIST_GAMEPAD_LIST_NAME, {
+                value = function() return self.pendingListName end,
+                changed = function(value) self.pendingListName = value end,
+                defaultText = GetString(SI_SHOPPING_LIST_GAMEPAD_LIST_NAME),
+                maxChars = 60,
+            }),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_SHOPPING_LIST_BUTTON_SAVE,
+                callback = function() self:SaveListNameFromManagement() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(LIST_NAME_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeDeleteListDialog()
+    ZO_Dialogs_RegisterCustomDialog(DELETE_LIST_DIALOG, {
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.BASIC,
+        },
+        title = {
+            text = SI_SHOPPING_LIST_DELETE_LIST_TITLE,
+        },
+        mainText = {
+            text = function()
+                return zo_strformat(
+                    GetString(SI_SHOPPING_LIST_DELETE_LIST_CONFIRM),
+                    self.owner.data:GetCurrentList().name
+                )
+            end,
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_SHOPPING_LIST_BUTTON_DELETE,
+                callback = function() self:DeleteCurrentListFromManagement() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeBudgetManagementDialog()
+    ZO_Dialogs_RegisterCustomDialog(BUDGET_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.PARAMETRIC,
+        },
+        setup = function(dialog)
+            local list = self.owner.data:GetCurrentList()
+            self.pendingBudgetListId = list.id
+            self.pendingBudget = list.budget and tostring(list.budget) or ""
+            dialog:setupFunc()
+        end,
+        title = {
+            text = SI_SHOPPING_LIST_BUDGET_TITLE,
+        },
+        mainText = {
+            text = function()
+                local list = self.owner.data:GetCurrentList()
+                return zo_strformat(
+                    GetString(SI_SHOPPING_LIST_RECORDED_SPENDING),
+                    formatGold(list.totalSpent)
+                )
+            end,
+        },
+        parametricList = {
+            textFieldEntry(SI_SHOPPING_LIST_BUTTON_BUDGET, {
+                value = function() return self.pendingBudget end,
+                changed = function(value) self.pendingBudget = value end,
+                defaultText = GetString(SI_SHOPPING_LIST_NO_BUDGET),
+                maxChars = 12,
+                numeric = true,
+            }),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_SHOPPING_LIST_BUTTON_SAVE,
+                callback = function() self:SaveBudgetFromManagement() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(BUDGET_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeBulkManagementDialog()
+    ZO_Dialogs_RegisterCustomDialog(BULK_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.PARAMETRIC,
+        },
+        setup = function(dialog)
+            self.pendingBulkText = ""
+            dialog:setupFunc()
+        end,
+        title = {
+            text = SI_SHOPPING_LIST_BULK_TITLE,
+        },
+        mainText = {
+            text = SI_SHOPPING_LIST_GAMEPAD_BULK_HELP,
+        },
+        parametricList = {
+            textFieldEntry(SI_SHOPPING_LIST_BUTTON_BULK_ADD, {
+                value = function() return self.pendingBulkText end,
+                changed = function(value) self.pendingBulkText = value end,
+                defaultText = GetString(SI_SHOPPING_LIST_BULK_PLACEHOLDER),
+                maxChars = 20000,
+                multiline = true,
+            }),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_SHOPPING_LIST_BULK_ADD,
+                callback = function() self:AddBulkItemsFromManagement() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(BULK_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeTripManagementDialog()
+    ZO_Dialogs_RegisterCustomDialog(TRIP_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.PARAMETRIC,
+        },
+        setup = function(dialog)
+            dialog.info.parametricList = self:BuildTripManagementEntries()
+            dialog:setupFunc()
+        end,
+        title = {
+            text = SI_SHOPPING_LIST_TRIP_TITLE,
+        },
+        mainText = {
+            text = SI_SHOPPING_LIST_TRIP_HELP,
+        },
+        parametricList = {},
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_GAMEPAD_BACK_OPTION,
+                callback = cancelDialog(TRIP_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeFilterManagementDialog()
+    ZO_Dialogs_RegisterCustomDialog(FILTER_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.PARAMETRIC,
+        },
+        setup = function(dialog)
+            dialog.info.parametricList = self:BuildFilterManagementEntries()
+            dialog:setupFunc()
+        end,
+        title = {
+            text = SI_SHOPPING_LIST_SETTINGS_ITEM_FILTER,
+        },
+        parametricList = {},
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_GAMEPAD_BACK_OPTION,
+                callback = cancelDialog(FILTER_DIALOG),
             },
         },
     })
@@ -523,6 +869,280 @@ end
 
 function Gamepad:ShowManagementDialog()
     ZO_Dialogs_ShowGamepadDialog(MANAGE_DIALOG)
+end
+
+function Gamepad:RefreshAfterManagement(status)
+    self.owner.ui.listSignature = nil
+    self.owner.ui:Refresh()
+    self:Refresh(true)
+    if status then
+        self:SetStatus(status)
+        self.owner.ui:SetStatus(status)
+    end
+end
+
+function Gamepad:OpenListNameFromManagement(mode)
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(LIST_NAME_DIALOG, { mode = mode })
+    end)
+end
+
+function Gamepad:SaveListNameFromManagement()
+    local mode = self.pendingListMode
+    local current = self.owner.data:GetCurrentList()
+    if mode == "new" then
+        local list, message = self.owner.data:AddList(self.pendingListName)
+        if not list then
+            showError(message)
+            return
+        end
+    elseif mode == "duplicate" then
+        local list, message = self.owner.data:DuplicateList(
+            current.id,
+            self.pendingListName
+        )
+        if not list then
+            showError(message)
+            return
+        end
+    else
+        local ok, message = self.owner.data:RenameList(
+            current.id,
+            self.pendingListName
+        )
+        if not ok then
+            showError(message)
+            return
+        end
+    end
+
+    ZO_Dialogs_ReleaseDialogOnButtonPress(LIST_NAME_DIALOG)
+    self:RefreshAfterManagement(GetString(SI_SHOPPING_LIST_STATUS_LISTS_UPDATED))
+end
+
+function Gamepad:OpenDeleteListFromManagement()
+    if #self.owner.data:GetLists() == 1 then
+        showError(GetString(SI_SHOPPING_LIST_ERROR_LIST_REQUIRED))
+        return
+    end
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(DELETE_LIST_DIALOG)
+    end)
+end
+
+function Gamepad:DeleteCurrentListFromManagement()
+    local deletedName = self.owner.data:GetCurrentList().name
+    local ok, message = self.owner.data:DeleteList(
+        self.owner.data:GetCurrentList().id
+    )
+    if not ok then
+        showError(message)
+        return
+    end
+    self:RefreshAfterManagement(zo_strformat(
+        GetString(SI_SHOPPING_LIST_STATUS_LIST_DELETED),
+        deletedName
+    ))
+end
+
+function Gamepad:MoveCurrentListFromManagement(direction)
+    local current = self.owner.data:GetCurrentList()
+    if not self.owner.data:MoveList(current.id, direction) then
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
+    self:RefreshAfterManagement(GetString(SI_SHOPPING_LIST_STATUS_LIST_ORDER_UPDATED))
+end
+
+function Gamepad:OpenBudgetFromManagement()
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(BUDGET_DIALOG)
+    end)
+end
+
+function Gamepad:SaveBudgetFromManagement()
+    local ok, message = self.owner.data:UpdateListBudget(
+        self.pendingBudgetListId,
+        self.pendingBudget
+    )
+    if not ok then
+        showError(message)
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(BUDGET_DIALOG)
+    self:RefreshAfterManagement(GetString(SI_SHOPPING_LIST_STATUS_BUDGET_UPDATED))
+end
+
+function Gamepad:ClearCompletedFromManagement()
+    local count = self.owner.data:ClearCompleted()
+    if count == 0 then
+        showError(GetString(SI_SHOPPING_LIST_STATUS_NO_COMPLETED_ITEMS))
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
+    self:RefreshAfterManagement(zo_strformat(
+        GetString(SI_SHOPPING_LIST_STATUS_CLEARED_COMPLETED),
+        count
+    ))
+end
+
+function Gamepad:GetGamepadFilterLabel()
+    local filter = self.owner.data:GetItemFilter()
+    if filter == "needed" then
+        return GetString(SI_SHOPPING_LIST_FILTER_NEEDED)
+    elseif filter == "completed" then
+        return GetString(SI_SHOPPING_LIST_FILTER_COMPLETED)
+    elseif filter == "overTarget" then
+        return GetString(SI_SHOPPING_LIST_FILTER_OVER_TARGET)
+    elseif filter == "restricted" then
+        return GetString(SI_SHOPPING_LIST_FILTER_RESTRICTED)
+    end
+    return GetString(SI_SHOPPING_LIST_FILTER_ALL)
+end
+
+function Gamepad:OpenFilterFromManagement()
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(FILTER_DIALOG)
+    end)
+end
+
+function Gamepad:BuildFilterManagementEntries()
+    local entries = {}
+    local current = self.owner.data:GetItemFilter()
+    for _, filter in ipairs(FILTER_ORDER) do
+        local filterValue = filter
+        local label
+        if filter == "needed" then
+            label = GetString(SI_SHOPPING_LIST_FILTER_NEEDED)
+        elseif filter == "completed" then
+            label = GetString(SI_SHOPPING_LIST_FILTER_COMPLETED)
+        elseif filter == "overTarget" then
+            label = GetString(SI_SHOPPING_LIST_FILTER_OVER_TARGET)
+        elseif filter == "restricted" then
+            label = GetString(SI_SHOPPING_LIST_FILTER_RESTRICTED)
+        else
+            label = GetString(SI_SHOPPING_LIST_FILTER_ALL)
+        end
+        entries[#entries + 1] = actionEntry(
+            filter == current and "[x] " .. label or "[ ] " .. label,
+            function() self:SetFilterFromManagement(filterValue) end
+        )
+    end
+    return entries
+end
+
+function Gamepad:SetFilterFromManagement(filter)
+    self.owner.data:SetItemFilter(filter)
+    ZO_Dialogs_ReleaseDialogOnButtonPress(FILTER_DIALOG)
+    self:RefreshAfterManagement(zo_strformat(
+        GetString(SI_SHOPPING_LIST_STATUS_FILTER_UPDATED),
+        self:GetGamepadFilterLabel()
+    ))
+end
+
+function Gamepad:UndoFromManagement()
+    local ok, message = self.owner:UndoDeletion()
+    if not ok then
+        showError(message)
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
+    self:RefreshAfterManagement(GetString(SI_SHOPPING_LIST_STATUS_UNDO_COMPLETE))
+end
+
+function Gamepad:OpenBulkFromManagement()
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(BULK_DIALOG)
+    end)
+end
+
+function Gamepad:AddBulkItemsFromManagement()
+    local entries, message = ShoppingListListTools.ParseBulkText(
+        self.pendingBulkText
+    )
+    if not entries then
+        showError(message)
+        return
+    end
+    for _, entry in ipairs(entries) do
+        self.owner.data:AddItem(entry.name, entry.quantity)
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(BULK_DIALOG)
+    self:RefreshAfterManagement(zo_strformat(
+        GetString(SI_SHOPPING_LIST_BULK_ADDED),
+        #entries
+    ))
+end
+
+function Gamepad:OpenTripFromManagement()
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(TRIP_DIALOG)
+    end)
+end
+
+function Gamepad:RefreshTripManagementDialog()
+    releaseAndOpen(TRIP_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(TRIP_DIALOG)
+    end)
+end
+
+function Gamepad:BuildTripManagementEntries()
+    local entries = {}
+    entries[#entries + 1] = actionEntry(
+        GetString(self.owner.data:IsMultiListTripEnabled()
+            and SI_SHOPPING_LIST_TRIP_DISABLE
+            or SI_SHOPPING_LIST_TRIP_ENABLE),
+        function()
+            self.owner.data:SetMultiListTripEnabled(
+                not self.owner.data:IsMultiListTripEnabled()
+            )
+            self:RefreshAfterManagement()
+            self:RefreshTripManagementDialog()
+        end
+    )
+    entries[#entries + 1] = actionEntry(
+        SI_SHOPPING_LIST_TRIP_ALL,
+        function()
+            self.owner.data:SetAllTripListsActive()
+            self:RefreshAfterManagement()
+            self:RefreshTripManagementDialog()
+        end
+    )
+    entries[#entries + 1] = actionEntry(
+        SI_SHOPPING_LIST_TRIP_CURRENT_ONLY,
+        function()
+            self.owner.data:SetOnlyTripListActive(
+                self.owner.data:GetCurrentList().id
+            )
+            self:RefreshAfterManagement()
+            self:RefreshTripManagementDialog()
+        end
+    )
+    for _, list in ipairs(self.owner.data:GetLists()) do
+        local listId = list.id
+        entries[#entries + 1] = actionEntry(
+            zo_strformat(
+                GetString(list.tripActive
+                    and SI_SHOPPING_LIST_TRIP_LIST_ACTIVE
+                    or SI_SHOPPING_LIST_TRIP_LIST_INACTIVE),
+                list.name
+            ),
+            function()
+                local current = self.owner.data:FindList(listId)
+                local ok, message = self.owner.data:SetListTripActive(
+                    listId,
+                    current and not current.tripActive
+                )
+                if not ok then
+                    showError(message)
+                    return
+                end
+                self:RefreshAfterManagement()
+                self:RefreshTripManagementDialog()
+            end
+        )
+    end
+    return entries
 end
 
 function Gamepad:OpenEditDialogFromManagement()

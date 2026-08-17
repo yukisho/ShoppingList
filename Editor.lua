@@ -300,8 +300,8 @@ function Editor:UpdateMoveButtons()
         return
     end
 
-    local _, index = self.owner.data:FindItem(self.item.id)
-    local count = #self.owner.data:GetItems()
+    local _, index, list = self.owner.data:FindItem(self.item.id)
+    local count = list and #list.items or 0
     self.moveUp:SetEnabled(index ~= nil and index > 1)
     self.moveDown:SetEnabled(index ~= nil and index < count)
 end

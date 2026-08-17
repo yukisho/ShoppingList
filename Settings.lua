@@ -5,12 +5,13 @@ local Settings = ShoppingListSettings
 function Settings:Initialize(owner)
     local saved = owner.data:GetSettings()
     local panelName = "ShoppingListOptions"
+    local buildVersion = owner:GetBuildVersion()
     local panel = {
         type = "panel",
         name = GetString(SI_SHOPPING_LIST_TITLE),
         displayName = GetString(SI_SHOPPING_LIST_TITLE),
         author = "Gravvy",
-        version = owner.version,
+        version = buildVersion and string.format("Build %d", buildVersion) or nil,
         registerForRefresh = true,
         registerForDefaults = true,
     }
@@ -32,14 +33,30 @@ function Settings:Initialize(owner)
             default = true,
         },
         {
-            type = "checkbox",
-            name = GetString(SI_SHOPPING_LIST_SETTINGS_SHOW_COMPLETED),
-            getFunc = function() return saved.showCompleted end,
+            type = "dropdown",
+            name = GetString(SI_SHOPPING_LIST_SETTINGS_ITEM_FILTER),
+            choices = {
+                GetString(SI_SHOPPING_LIST_FILTER_ALL),
+                GetString(SI_SHOPPING_LIST_FILTER_NEEDED),
+                GetString(SI_SHOPPING_LIST_FILTER_COMPLETED),
+                GetString(SI_SHOPPING_LIST_FILTER_OVER_TARGET),
+                GetString(SI_SHOPPING_LIST_FILTER_RESTRICTED),
+            },
+            choicesValues = {
+                "all",
+                "needed",
+                "completed",
+                "overTarget",
+                "restricted",
+            },
+            getFunc = function() return owner.data:GetItemFilter() end,
             setFunc = function(value)
-                saved.showCompleted = value
+                owner.data:SetItemFilter(value)
+                owner.ui.offset = 0
                 owner.ui:Refresh()
+                owner.gamepad:Refresh()
             end,
-            default = true,
+            default = "all",
         },
         {
             type = "checkbox",
@@ -77,6 +94,7 @@ function Settings:Initialize(owner)
             func = function()
                 owner.data:ClearCompleted()
                 owner.ui:Refresh()
+                owner.gamepad:Refresh()
             end,
             width = "half",
         },

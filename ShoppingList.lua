@@ -1,6 +1,5 @@
 ShoppingList = {
     name = "ShoppingList",
-    version = "0.15.3",
 }
 
 local addon = ShoppingList
@@ -14,6 +13,16 @@ local REQUIRED_LIBRARIES = {
         isAvailable = function() return LibMainMenu2 ~= nil end,
     },
 }
+
+function addon:GetBuildVersion()
+    local manager = GetAddOnManager()
+    for index = 1, manager:GetNumAddOns() do
+        local name = manager:GetAddOnInfo(index)
+        if name == self.name then
+            return manager:GetAddOnVersion(index)
+        end
+    end
+end
 
 local function formatGold(value)
     value = math.floor((tonumber(value) or 0) + 0.5)
@@ -40,6 +49,8 @@ function addon:Initialize()
     self.editor:Initialize()
     self.help = ShoppingListHelp:New(self)
     self.help:Initialize()
+    self.listTools = ShoppingListListTools:New(self)
+    self.listTools:Initialize()
 
     self.ags = ShoppingListAGSAdapter:New(self)
     local hasAGS = self.ags:Initialize()
@@ -140,14 +151,28 @@ function addon:MoveItem(id, direction)
     return true
 end
 
+function addon:UndoDeletion()
+    local ok, actionOrMessage = self.data:UndoLastDeletion()
+    if not ok then
+        return false, actionOrMessage
+    end
+    self.ui.listSignature = nil
+    self.ui:Refresh()
+    self.gamepad:Refresh()
+    return true, actionOrMessage
+end
+
 function addon:RecordPurchase(itemLink, itemName, quantity, purchase)
     purchase = purchase or {}
     purchase.itemLink = purchase.itemLink or itemLink
     purchase.itemName = purchase.itemName or itemName
-    local list = self.data:GetCurrentList()
-    local spendingBefore = tonumber(list.totalSpent) or 0
+    local shoppingLists = self.data:GetShoppingLists()
+    local spendingBefore = {}
+    for _, list in ipairs(shoppingLists) do
+        spendingBefore[list.id] = tonumber(list.totalSpent) or 0
+    end
     local changes = self.matcher:ApplyPurchase(
-        self.data:GetItems(),
+        self.data:GetShoppingItems(),
         itemLink,
         itemName,
         quantity
@@ -159,15 +184,17 @@ function addon:RecordPurchase(itemLink, itemName, quantity, purchase)
     for _, change in ipairs(changes) do
         self.data:RecordPurchase(change.entry, change.quantity, purchase)
     end
-    if list.budget
-        and spendingBefore <= list.budget
-        and list.totalSpent > list.budget
-    then
-        d(zo_strformat(
-            GetString(SI_SHOPPING_LIST_CHAT_OVER_BUDGET),
-            list.name,
-            formatGold(list.totalSpent - list.budget)
-        ))
+    for _, list in ipairs(shoppingLists) do
+        if list.budget
+            and spendingBefore[list.id] <= list.budget
+            and list.totalSpent > list.budget
+        then
+            d(zo_strformat(
+                GetString(SI_SHOPPING_LIST_CHAT_OVER_BUDGET),
+                list.name,
+                formatGold(list.totalSpent - list.budget)
+            ))
+        end
     end
     self.ui:Refresh()
     self.gamepad:Refresh()

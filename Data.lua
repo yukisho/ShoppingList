@@ -2,18 +2,28 @@ ShoppingListData = {}
 
 local Data = ShoppingListData
 local DEFAULT_LIST_NAME = GetString(SI_SHOPPING_LIST_DEFAULT_LIST_NAME)
+local MAX_DELETED_ACTIONS = 20
+local VALID_FILTERS = {
+    all = true,
+    needed = true,
+    completed = true,
+    overTarget = true,
+    restricted = true,
+}
 
 local defaults = {
     nextItemId = 1,
     nextListId = 2,
     selectedListId = 1,
     archivedLists = {},
+    deletedActions = {},
     lists = {
         {
             id = 1,
             name = DEFAULT_LIST_NAME,
             items = {},
             totalSpent = 0,
+            tripActive = true,
         },
     },
     settings = {
@@ -22,6 +32,9 @@ local defaults = {
         showCompleted = true,
         announcePurchases = true,
         panelSide = "right",
+        itemFilter = "all",
+        filterMigrated = false,
+        multiListTrips = false,
         window = {
             width = 350,
             height = 500,
@@ -101,9 +114,24 @@ function Data:Migrate()
     if type(self.saved.archivedLists) ~= "table" then
         self.saved.archivedLists = {}
     end
+    if type(self.saved.deletedActions) ~= "table" then
+        self.saved.deletedActions = {}
+    end
+    while #self.saved.deletedActions > MAX_DELETED_ACTIONS do
+        table.remove(self.saved.deletedActions, 1)
+    end
 
-    local window = self.saved.settings.window or {}
-    self.saved.settings.window = window
+    local settings = self.saved.settings or {}
+    self.saved.settings = settings
+    if settings.filterMigrated ~= true then
+        settings.itemFilter = settings.showCompleted == false and "needed" or "all"
+        settings.filterMigrated = true
+    elseif not VALID_FILTERS[settings.itemFilter] then
+        settings.itemFilter = "all"
+    end
+    settings.multiListTrips = settings.multiListTrips == true
+    local window = settings.window or {}
+    settings.window = window
     window.width = zo_clamp(tonumber(window.width) or 350, 350, 900)
     window.height = zo_clamp(tonumber(window.height) or 500, 400, 900)
 
@@ -121,6 +149,7 @@ function Data:Migrate()
                 )
             end
             list.items = type(list.items) == "table" and list.items or {}
+            list.tripActive = list.tripActive == true
             if archived then
                 list.archivedAt = tonumber(list.archivedAt) or GetTimeStamp()
             else
@@ -167,6 +196,7 @@ function Data:Migrate()
     if not self:FindList(self.saved.selectedListId) then
         self.saved.selectedListId = self.saved.lists[1].id
     end
+    self:EnsureActiveTripList()
 end
 
 function Data:GetItems()
@@ -204,6 +234,88 @@ function Data:GetCurrentList()
         self.saved.selectedListId = list.id
     end
     return list
+end
+
+function Data:EnsureActiveTripList()
+    for _, list in ipairs(self.saved.lists) do
+        if list.tripActive then
+            return
+        end
+    end
+    self:GetCurrentList().tripActive = true
+end
+
+function Data:IsMultiListTripEnabled()
+    return self.saved.settings.multiListTrips == true
+end
+
+function Data:SetMultiListTripEnabled(enabled)
+    self.saved.settings.multiListTrips = enabled == true
+    if enabled then
+        self:GetCurrentList().tripActive = true
+        self:EnsureActiveTripList()
+    end
+end
+
+function Data:SetListTripActive(id, active)
+    local list = self:FindList(id)
+    if not list then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if not active and list.tripActive then
+        local activeCount = 0
+        for _, candidate in ipairs(self.saved.lists) do
+            if candidate.tripActive then
+                activeCount = activeCount + 1
+            end
+        end
+        if activeCount == 1 then
+            return false, GetString(SI_SHOPPING_LIST_ERROR_TRIP_LIST_REQUIRED)
+        end
+    end
+    list.tripActive = active == true
+    return true
+end
+
+function Data:SetAllTripListsActive()
+    for _, list in ipairs(self.saved.lists) do
+        list.tripActive = true
+    end
+end
+
+function Data:SetOnlyTripListActive(id)
+    local selected = self:FindList(id)
+    if not selected then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    for _, list in ipairs(self.saved.lists) do
+        list.tripActive = list.id == id
+    end
+    return true
+end
+
+function Data:GetShoppingLists()
+    if not self:IsMultiListTripEnabled() then
+        return { self:GetCurrentList() }
+    end
+
+    local result = {}
+    for _, list in ipairs(self.saved.lists) do
+        if list.tripActive then
+            result[#result + 1] = list
+        end
+    end
+    return result
+end
+
+function Data:GetShoppingItems()
+    local result = {}
+    for _, list in ipairs(self:GetShoppingLists()) do
+        for _, item in ipairs(list.items) do
+            result[#result + 1] = item
+        end
+    end
+    return result
 end
 
 function Data:SelectList(id)
@@ -268,6 +380,7 @@ function Data:AddList(name)
         items = {},
         totalSpent = 0,
         budget = nil,
+        tripActive = self:IsMultiListTripEnabled(),
     }
     self.saved.nextListId = self.saved.nextListId + 1
     self.saved.lists[#self.saved.lists + 1] = list
@@ -303,6 +416,7 @@ function Data:ImportList(name, items)
         items = {},
         totalSpent = 0,
         budget = nil,
+        tripActive = self:IsMultiListTripEnabled(),
     }
     local nextItemId = self.saved.nextItemId
     for _, source in ipairs(validated) do
@@ -353,6 +467,7 @@ function Data:DuplicateList(id, name)
         items = {},
         totalSpent = 0,
         budget = source.budget,
+        tripActive = self:IsMultiListTripEnabled(),
     }
     self.saved.nextListId = self.saved.nextListId + 1
 
@@ -414,18 +529,37 @@ function Data:UpdateListBudget(id, value)
     return true
 end
 
+function Data:PushDeletedAction(action)
+    action.deletedAt = GetTimeStamp()
+    local actions = self.saved.deletedActions
+    actions[#actions + 1] = action
+    while #actions > MAX_DELETED_ACTIONS do
+        table.remove(actions, 1)
+    end
+end
+
+function Data:CanUndoDeletion()
+    return #self.saved.deletedActions > 0
+end
+
 function Data:DeleteList(id)
     if #self.saved.lists == 1 then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_REQUIRED)
     end
 
-    local _, index = self:FindList(id)
-    if not index then
+    local list, index = self:FindList(id)
+    if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    self:PushDeletedAction({
+        kind = "list",
+        list = list,
+        index = index,
+    })
     table.remove(self.saved.lists, index)
     local selected = self.saved.lists[math.min(index, #self.saved.lists)]
     self.saved.selectedListId = selected.id
+    self:EnsureActiveTripList()
     return true, selected
 end
 
@@ -453,6 +587,7 @@ function Data:ArchiveList(id)
 
     local selected = self.saved.lists[math.min(index, #self.saved.lists)]
     self.saved.selectedListId = selected.id
+    self:EnsureActiveTripList()
     return true, list, selected
 end
 
@@ -477,6 +612,62 @@ end
 
 function Data:GetSettings()
     return self.saved.settings
+end
+
+function Data:GetItemFilter()
+    return self.saved.settings.itemFilter or "all"
+end
+
+function Data:SetItemFilter(filter)
+    if not VALID_FILTERS[filter] then
+        return false
+    end
+    self.saved.settings.itemFilter = filter
+    return true
+end
+
+function Data:ItemIsOverTarget(item)
+    if not item.maxUnitPrice then
+        return false
+    end
+    local history = item.purchaseHistory or {}
+    local lastPurchase = history[#history]
+    return lastPurchase ~= nil
+        and (tonumber(lastPurchase.unitPrice) or 0) > item.maxUnitPrice
+end
+
+function Data:ItemHasMatchingRules(item)
+    local rule = item.match or {}
+    return rule.setId ~= nil
+        or (rule.setName ~= nil and rule.setName ~= "")
+        or (rule.traitType ~= nil and rule.traitType ~= ITEM_TRAIT_TYPE_NONE)
+        or (rule.qualityMode ~= nil and rule.qualityMode ~= "any")
+        or (rule.levelMode ~= nil and rule.levelMode ~= "any")
+end
+
+function Data:ItemPassesFilter(item, filter)
+    filter = filter or self:GetItemFilter()
+    if filter == "needed" then
+        return not item.completed
+    elseif filter == "completed" then
+        return item.completed == true
+    elseif filter == "overTarget" then
+        return self:ItemIsOverTarget(item)
+    elseif filter == "restricted" then
+        return self:ItemHasMatchingRules(item)
+    end
+    return true
+end
+
+function Data:GetFilteredShoppingItems()
+    local result = {}
+    local filter = self:GetItemFilter()
+    for _, item in ipairs(self:GetShoppingItems()) do
+        if self:ItemPassesFilter(item, filter) then
+            result[#result + 1] = item
+        end
+    end
+    return result
 end
 
 function Data:AddItem(name, quantity, itemLink, nameHash)
@@ -564,29 +755,49 @@ function Data:UpdateItem(id, values)
 end
 
 function Data:FindItem(id)
-    for index, item in ipairs(self:GetItems()) do
+    local current = self:GetCurrentList()
+    for index, item in ipairs(current.items) do
         if item.id == id then
-            return item, index
+            return item, index, current
+        end
+    end
+    for _, list in ipairs(self.saved.lists) do
+        if list ~= current then
+            for index, item in ipairs(list.items) do
+                if item.id == id then
+                    return item, index, list
+                end
+            end
         end
     end
 end
 
+function Data:GetListForItem(id)
+    local _, _, list = self:FindItem(id)
+    return list
+end
+
 function Data:RemoveItem(id)
-    local _, index = self:FindItem(id)
-    if not index then
+    local item, index, list = self:FindItem(id)
+    if not item then
         return false
     end
-    table.remove(self:GetItems(), index)
+    self:PushDeletedAction({
+        kind = "items",
+        listId = list.id,
+        items = { { item = item, index = index } },
+    })
+    table.remove(list.items, index)
     return true
 end
 
 function Data:MoveItem(id, direction)
-    local _, index = self:FindItem(id)
-    if not index then
+    local item, index, list = self:FindItem(id)
+    if not item then
         return false
     end
 
-    local items = self:GetItems()
+    local items = list.items
     local target = zo_clamp(index + direction, 1, #items)
     if target == index then
         return false
@@ -613,17 +824,73 @@ end
 
 function Data:ClearCompleted()
     local items = self:GetItems()
+    local removed = {}
     for index = #items, 1, -1 do
         if items[index].completed then
-            table.remove(items, index)
+            removed[#removed + 1] = {
+                item = table.remove(items, index),
+                index = index,
+            }
         end
     end
+    if #removed > 0 then
+        self:PushDeletedAction({
+            kind = "items",
+            listId = self:GetCurrentList().id,
+            items = removed,
+        })
+    end
+    return #removed
+end
+
+function Data:UndoLastDeletion()
+    local actions = self.saved.deletedActions
+    local action = actions[#actions]
+    if not action then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_NOTHING_TO_UNDO)
+    end
+
+    if action.kind == "list" and action.list then
+        local list = action.list
+        if self:ListNameExists(list.name, list.id) then
+            list.name = self:GetUniqueListName(list.name, list.id)
+        end
+        local index = zo_clamp(tonumber(action.index) or (#self.saved.lists + 1), 1, #self.saved.lists + 1)
+        table.insert(self.saved.lists, index, list)
+        self.saved.selectedListId = list.id
+    elseif action.kind == "items" and type(action.items) == "table" then
+        local list = self:FindList(action.listId)
+        if not list then
+            return false, GetString(SI_SHOPPING_LIST_ERROR_UNDO_LIST_MISSING)
+        end
+        table.sort(action.items, function(left, right)
+            return (tonumber(left.index) or 1) < (tonumber(right.index) or 1)
+        end)
+        for _, removed in ipairs(action.items) do
+            if removed.item then
+                local index = zo_clamp(tonumber(removed.index) or (#list.items + 1), 1, #list.items + 1)
+                table.insert(list.items, index, removed.item)
+            end
+        end
+        self.saved.selectedListId = list.id
+    else
+        table.remove(actions)
+        return false, GetString(SI_SHOPPING_LIST_ERROR_NOTHING_TO_UNDO)
+    end
+
+    table.remove(actions)
+    self:EnsureActiveTripList()
+    return true, action
 end
 
 function Data:RecordPurchase(entry, quantity, purchase)
     purchase = purchase or {}
     quantity = math.max(0, tonumber(quantity) or 0)
     if not entry or quantity == 0 then
+        return
+    end
+    local list = self:GetListForItem(entry.id)
+    if not list then
         return
     end
 
@@ -652,8 +919,8 @@ function Data:RecordPurchase(entry, quantity, purchase)
     }
     entry.totalSpent = math.max(0, tonumber(entry.totalSpent) or 0) + appliedPrice
     entry.pricedQuantity = math.max(0, tonumber(entry.pricedQuantity) or 0) + quantity
-    local list = self:GetCurrentList()
     list.totalSpent = math.max(0, tonumber(list.totalSpent) or 0) + appliedPrice
+    return list
 end
 
 function Data.NormalizeName(name)
