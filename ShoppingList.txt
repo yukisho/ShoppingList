@@ -4,8 +4,8 @@
 ## Version: 0.15.3
 ## APIVersion: 101050
 ## AddOnVersion: 24
-## DependsOn: LibAddonMenu-2.0>=43 LibMainMenu-2.0
-## OptionalDependsOn: AwesomeGuildStore LibCustomMenu>=730
+## DependsOn: LibAddonMenu-2.0>=43 LibMainMenu-2.0=>450
+## OptionalDependsOn: AwesomeGuildStore LibCustomMenu
 ## SavedVariables: ShoppingList_Data
 
 # DISCLAIMER:
