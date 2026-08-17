@@ -147,7 +147,7 @@ ZO_CreateStringId("SI_SHOPPING_LIST_BULK_ERROR_EMPTY", "Paste at least one item 
 ZO_CreateStringId("SI_SHOPPING_LIST_BULK_ADDED", "Added <<1>> items to the current list.")
 
 ZO_CreateStringId("SI_SHOPPING_LIST_TRIP_TITLE", "Active Shopping Lists")
-ZO_CreateStringId("SI_SHOPPING_LIST_TRIP_HELP", "Enable merged trips to shop from every checked list at once. Purchases never update unchecked lists.")
+ZO_CreateStringId("SI_SHOPPING_LIST_TRIP_HELP", "Enable merged trips to shop from every checked list at once.\nPurchases never update unchecked lists.")
 ZO_CreateStringId("SI_SHOPPING_LIST_TRIP_ALL", "All")
 ZO_CreateStringId("SI_SHOPPING_LIST_TRIP_CURRENT_ONLY", "Current Only")
 ZO_CreateStringId("SI_SHOPPING_LIST_TRIP_SELECTED_LIST", "<<1>> (selected)")

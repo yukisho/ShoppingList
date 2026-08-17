@@ -4,6 +4,8 @@
 • Added bulk item entry with support for pasted item and quantity lines.
 • Added All, Needed, Completed, Over Price Target, and Rule-Restricted item filters.
 • Added optional merged shopping trips across selected active lists while keeping inactive lists untouched.
+• Kept the mouse cursor active after closing the item-removal confirmation while the shopping list remains open.
+• Corrected the Active Shopping Lists description layout so the full text wraps inside the window.
 
 0.15.3
 • Minor bug fixes and improvements.

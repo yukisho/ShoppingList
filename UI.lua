@@ -269,6 +269,9 @@ function UI:InitializeDialogs()
                 text = SI_DIALOG_CANCEL,
             },
         },
+        finishedCallback = function()
+            self:RestoreMouseAfterDialog()
+        end,
     })
 end
 
@@ -1328,6 +1331,22 @@ function UI:AcquireMouse()
             end
         end, 10)
     end
+end
+
+function UI:RestoreMouseAfterDialog()
+    if not self.ownsUIMode or self.window:IsHidden() then
+        return
+    end
+
+    zo_callLater(function()
+        if self.ownsUIMode
+            and not self.window:IsHidden()
+            and IsGameCameraUIModeActive
+            and not IsGameCameraUIModeActive()
+        then
+            SetGameCameraUIMode(true)
+        end
+    end, 10)
 end
 
 function UI:ReleaseMouse()
