@@ -434,14 +434,6 @@ function Data:ArchiveList(id)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
-    if #list.items == 0 then
-        return false, GetString(SI_SHOPPING_LIST_ERROR_ARCHIVE_EMPTY)
-    end
-    for _, item in ipairs(list.items) do
-        if not item.completed then
-            return false, GetString(SI_SHOPPING_LIST_ERROR_ARCHIVE_INCOMPLETE)
-        end
-    end
 
     table.remove(self.saved.lists, index)
     list.archivedAt = GetTimeStamp()

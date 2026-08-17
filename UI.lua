@@ -445,15 +445,7 @@ function UI:UpdateListMoveButtons()
 end
 
 function UI:UpdateListArchiveButtons()
-    local list = self.owner.data:GetCurrentList()
-    local canArchive = #list.items > 0
-    for _, item in ipairs(list.items) do
-        if not item.completed then
-            canArchive = false
-            break
-        end
-    end
-    self.listDialogArchive:SetEnabled(canArchive)
+    self.listDialogArchive:SetEnabled(true)
     self.listDialogArchived:SetText(zo_strformat(
         GetString(SI_SHOPPING_LIST_ARCHIVED_COUNT),
         #self.owner.data:GetArchivedLists()
