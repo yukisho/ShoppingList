@@ -1,7 +1,7 @@
 ## Title: Shopping List
 ## Description: A compact shopping list for guild store trips.
 ## Author: Gravvy
-## Version: 0.15.2
+## Version: 0.15.3
 ## APIVersion: 101050
 ## AddOnVersion: 24
 ## DependsOn: LibAddonMenu-2.0>=43 LibMainMenu-2.0
