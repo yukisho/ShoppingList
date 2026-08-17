@@ -1,0 +1,28 @@
+## Title: Shopping List
+## Description: A compact shopping list for guild store trips.
+## Author: Gravvy
+## Version: 0.15.2
+## APIVersion: 101050
+## AddOnVersion: 24
+## OptionalDependsOn: LibAddonMenu-2.0>=43 LibMainMenu-2.0 AwesomeGuildStore LibCustomMenu>=730
+## SavedVariables: ShoppingList_Data
+
+Localization/en.lua
+AGSAdapter.lua
+Archive.lua
+Bindings.xml
+ContextMenu.lua
+Data.lua
+Editor.lua
+Gamepad.lua
+Gamepad.xml
+GamepadManagement.lua
+Help.lua
+History.lua
+MainMenu.lua
+Matcher.lua
+PurchaseTracker.lua
+Settings.lua
+Share.lua
+ShoppingList.lua
+UI.lua
