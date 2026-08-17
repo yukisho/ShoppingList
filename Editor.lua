@@ -116,15 +116,47 @@ local function getTraitChoices()
     local choices = {
         { label = GetString(SI_SHOPPING_LIST_EDITOR_ANY_TRAIT), value = ITEM_TRAIT_TYPE_NONE },
     }
+    local traits = {}
+    local labelCounts = {}
     local first = ITEM_TRAIT_TYPE_ITERATION_BEGIN or 1
     local last = ITEM_TRAIT_TYPE_ITERATION_END or 64
     for traitType = first, last do
         if traitType ~= ITEM_TRAIT_TYPE_NONE then
             local label = GetString("SI_ITEMTRAITTYPE", traitType)
             if label and label ~= "" then
-                choices[#choices + 1] = { label = label, value = traitType }
+                traits[#traits + 1] = {
+                    label = label,
+                    value = traitType,
+                    category = GetItemTraitTypeCategory
+                        and GetItemTraitTypeCategory(traitType),
+                }
+                labelCounts[label] = (labelCounts[label] or 0) + 1
             end
         end
+    end
+
+    local categoryLabels = {
+        [ITEM_TRAIT_TYPE_CATEGORY_WEAPON] = GetString(
+            SI_SHOPPING_LIST_EDITOR_TRAIT_WEAPON
+        ),
+        [ITEM_TRAIT_TYPE_CATEGORY_ARMOR] = GetString(
+            SI_SHOPPING_LIST_EDITOR_TRAIT_ARMOR
+        ),
+        [ITEM_TRAIT_TYPE_CATEGORY_JEWELRY] = GetString(
+            SI_SHOPPING_LIST_EDITOR_TRAIT_JEWELRY
+        ),
+    }
+    for _, trait in ipairs(traits) do
+        local label = trait.label
+        local categoryLabel = categoryLabels[trait.category]
+        if labelCounts[label] > 1 and categoryLabel then
+            label = zo_strformat(
+                GetString(SI_SHOPPING_LIST_EDITOR_TRAIT_WITH_CATEGORY),
+                label,
+                categoryLabel
+            )
+        end
+        choices[#choices + 1] = { label = label, value = trait.value }
     end
     return choices
 end
