@@ -2,7 +2,7 @@
     <Layer name="SI_KEYBINDINGS_LAYER_GENERAL">
         <Category name="SI_BINDINGS_CATEGORY_GENERAL">
             <Action name="SHOPPING_LIST_TOGGLE">
-                <Down>ShoppingList:ToggleWindow()</Down>
+                <Down>GravvyShoppingList:ToggleWindow()</Down>
             </Action>
         </Category>
     </Layer>

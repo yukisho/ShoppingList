@@ -3,7 +3,7 @@
 • Added safe list discovery, current-list defaults, optional notes, and stable API error codes.
 • Added developer integration documentation and ESOUI-ready BBCode examples.
 • Distinguished same-named weapon, armor, and jewelry traits in item-editor dropdowns.
-• Renamed the internal add-on identity to GravvyShoppingList to avoid a conflict with Master Merchant's legacy ShoppingList importer.
+• Renamed the manifest and Lua namespaces to GravvyShoppingList to avoid Master Merchant's legacy ShoppingList importer warning.
 
 0.16.2
 • Added an option to add linked chat items to the current shopping list from their right-click menu.

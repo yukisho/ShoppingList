@@ -15,12 +15,11 @@ integration can run without it:
 ```
 
 Use `## DependsOn: GravvyShoppingList` instead if your add-on cannot function
-without Shopping List. The manifest dependency name is `GravvyShoppingList`;
-the Lua API remains `ShoppingList.API`. Check for the API after your add-on has
-loaded:
+without Shopping List. Both the manifest dependency name and Lua API namespace
+use `GravvyShoppingList`. Check for the API after your add-on has loaded:
 
 ```lua
-local api = ShoppingList and ShoppingList.API
+local api = GravvyShoppingList and GravvyShoppingList.API
 if not api or api:GetVersion() < 1 then
     return
 end
@@ -33,7 +32,7 @@ enabled. Calls made before Shopping List has initialized fail safely with
 ## API version
 
 ```lua
-local version = ShoppingList.API:GetVersion()
+local version = GravvyShoppingList.API:GetVersion()
 ```
 
 Returns the public API version as a number. This is independent of Shopping
@@ -42,7 +41,7 @@ List's add-on release version. The initial API version is `1`.
 ## Discover active lists
 
 ```lua
-local lists, errorCode = ShoppingList.API:GetLists()
+local lists, errorCode = GravvyShoppingList.API:GetLists()
 ```
 
 On success, `lists` is a new array containing copies of the active list IDs and
@@ -62,7 +61,7 @@ returns `nil, "NOT_READY"`.
 ## Add an item
 
 ```lua
-local success, itemIdOrError = ShoppingList.API:AddItem(
+local success, itemIdOrError = GravvyShoppingList.API:AddItem(
     itemLinkOrName,
     quantity,
     options
@@ -92,7 +91,7 @@ On success, the method returns `true, itemId`. On failure, it returns
 `false, errorCode`.
 
 ```lua
-local success, result = ShoppingList.API:AddItem(itemLink, 5)
+local success, result = GravvyShoppingList.API:AddItem(itemLink, 5)
 if success then
     local itemId = result
 else
@@ -114,13 +113,13 @@ window or item editor and never writes a message to chat.
 ### Target the current list
 
 ```lua
-local success, result = ShoppingList.API:AddItem(itemLink, 10)
+local success, result = GravvyShoppingList.API:AddItem(itemLink, 10)
 ```
 
 ### Target a list by name and include a note
 
 ```lua
-local success, result = ShoppingList.API:AddItem("Rubedite Ingot", 200, {
+local success, result = GravvyShoppingList.API:AddItem("Rubedite Ingot", 200, {
     listName = "Crafting Materials",
     note = "Needed for the next equipment set",
 })
@@ -129,11 +128,11 @@ local success, result = ShoppingList.API:AddItem("Rubedite Ingot", 200, {
 ### Target a list by ID without updating the status line
 
 ```lua
-local lists, errorCode = ShoppingList.API:GetLists()
+local lists, errorCode = GravvyShoppingList.API:GetLists()
 if lists then
     for _, list in ipairs(lists) do
         if list.name == "Items to Resell" then
-            ShoppingList.API:AddItem(itemLink, 1, {
+            GravvyShoppingList.API:AddItem(itemLink, 1, {
                 listId = list.id,
                 silent = true,
             })
@@ -145,7 +144,7 @@ end
 
 ## Error codes
 
-Stable error strings are also exposed through `ShoppingList.API.ERROR`:
+Stable error strings are also exposed through `GravvyShoppingList.API.ERROR`:
 
 | Error | Meaning |
 | --- | --- |
@@ -158,11 +157,12 @@ Stable error strings are also exposed through `ShoppingList.API.ERROR`:
 Example without hard-coding the string:
 
 ```lua
-if not success and result == ShoppingList.API.ERROR.LIST_NOT_FOUND then
+if not success and result == GravvyShoppingList.API.ERROR.LIST_NOT_FOUND then
     -- Ask the player to select another list.
 end
 ```
 
 Only the functions and constants documented here are public. Add-ons should not
-read or modify `ShoppingList.data`, saved variables, or returned internal item
-tables. Those implementation details may change without an API-version change.
+read or modify `GravvyShoppingList.data`, saved variables, or returned internal
+item tables. Those implementation details may change without an API-version
+change.

@@ -1,16 +1,16 @@
 [SIZE="4"][B]Developer API[/B][/SIZE]
 
-Shopping List 0.16.3 includes public API version 1. Other add-ons can add item links or plain item names to an active shopping list without accessing Shopping List's saved variables or internal UI objects.
+Shopping List 0.16.3 includes public API version 1. Other addons can add item links or plain item names to an active shopping list without accessing Shopping List's saved variables or internal UI objects.
 
 [B]Load order[/B]
 
-Add Shopping List to your add-on manifest as an optional dependency:
+Add Shopping List to your addon manifest as an optional dependency:
 
 [CODE]## OptionalDependsOn: GravvyShoppingList[/CODE]
 
-Use [CODE]## DependsOn: GravvyShoppingList[/CODE] instead if your add-on cannot function without it. The manifest dependency name is [CODE]GravvyShoppingList[/CODE], while the Lua API remains [CODE]ShoppingList.API[/CODE]. Check that the API is available after your add-on loads:
+Use [CODE]## DependsOn: GravvyShoppingList[/CODE] instead if your addon cannot function without it. Both the manifest dependency name and Lua API namespace use [CODE]GravvyShoppingList[/CODE]. Check that the API is available after your addon loads:
 
-[CODE]local api = ShoppingList and ShoppingList.API
+[CODE]local api = GravvyShoppingList and GravvyShoppingList.API
 if not api or api:GetVersion() < 1 then
     return
 end[/CODE]
@@ -64,7 +64,7 @@ GetLists returns fresh copies containing only [CODE]id[/CODE] and [CODE]name[/CO
 
 [CODE]local apiVersion = api:GetVersion() -- 1[/CODE]
 
-The API version is separate from the Shopping List add-on version. AddItem returns [CODE]true, itemId[/CODE] on success or [CODE]false, errorCode[/CODE] on failure. GetLists returns [CODE]lists[/CODE] on success or [CODE]nil, errorCode[/CODE] before initialization.
+The API version is separate from the Shopping List addon version. AddItem returns [CODE]true, itemId[/CODE] on success or [CODE]false, errorCode[/CODE] on failure. GetLists returns [CODE]lists[/CODE] on success or [CODE]nil, errorCode[/CODE] before initialization.
 
 [LIST]
 [*][CODE]NOT_READY[/CODE] - Shopping List has not finished initializing.
@@ -80,4 +80,4 @@ Error constants are available without hard-coding their values:
     -- Ask the player to choose another list.
 end[/CODE]
 
-Only [CODE]ShoppingList.API[/CODE] is public. Integrations should not access [CODE]ShoppingList.data[/CODE], Shopping List saved variables, or internal UI objects. Full technical documentation is included with the add-on in DeveloperAPI.txt.
+Only [CODE]GravvyShoppingList.API[/CODE] is public. Integrations should not access [CODE]GravvyShoppingList.data[/CODE], Shopping List saved variables, or internal UI objects. Full technical documentation is included with the addon in DeveloperAPI.txt.

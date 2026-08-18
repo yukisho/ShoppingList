@@ -1,8 +1,8 @@
-ShoppingList = {
+GravvyShoppingList = {
     name = "GravvyShoppingList",
 }
 
-local addon = ShoppingList
+local addon = GravvyShoppingList
 local REQUIRED_LIBRARIES = {
     {
         name = "LibAddonMenu-2.0",

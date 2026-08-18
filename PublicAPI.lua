@@ -15,10 +15,10 @@ local API = {
 }
 
 local function getData()
-    if not ShoppingList or not ShoppingList.data then
+    if not GravvyShoppingList or not GravvyShoppingList.data then
         return nil
     end
-    return ShoppingList.data
+    return GravvyShoppingList.data
 end
 
 local function findList(data, options)
@@ -104,7 +104,7 @@ end
 
 function API:AddItem(itemLinkOrName, quantity, options)
     local data = getData()
-    if not data or not ShoppingList.AddItemToList then
+    if not data or not GravvyShoppingList.AddItemToList then
         return false, ERROR.NOT_READY
     end
 
@@ -138,7 +138,7 @@ function API:AddItem(itemLinkOrName, quantity, options)
         return false, listError
     end
 
-    local item = ShoppingList:AddItemToList(
+    local item = GravvyShoppingList:AddItemToList(
         list.id,
         name,
         quantity,
@@ -150,8 +150,8 @@ function API:AddItem(itemLinkOrName, quantity, options)
         return false, ERROR.INVALID_ITEM
     end
 
-    if not options.silent and ShoppingList.ui then
-        ShoppingList.ui:SetStatus(zo_strformat(
+    if not options.silent and GravvyShoppingList.ui then
+        GravvyShoppingList.ui:SetStatus(zo_strformat(
             GetString(SI_SHOPPING_LIST_STATUS_ADDED_ITEM),
             item.name
         ))
@@ -159,4 +159,4 @@ function API:AddItem(itemLinkOrName, quantity, options)
     return true, item.id
 end
 
-ShoppingList.API = API
+GravvyShoppingList.API = API

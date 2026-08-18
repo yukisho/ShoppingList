@@ -42,6 +42,6 @@ PurchaseTracker.lua
 Settings.lua
 Share.lua
 Backup.lua
-ShoppingList.lua
+GravvyShoppingList.lua
 PublicAPI.lua
 UI.lua
