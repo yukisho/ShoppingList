@@ -53,7 +53,7 @@ function Gamepad:Initialize()
     self:InitializeDialogs()
     self:InitializeManagementDialogs()
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_GamepadModeChanged",
+        "GravvyShoppingList_GamepadModeChanged",
         EVENT_GAMEPAD_PREFERRED_MODE_CHANGED,
         function(_, gamepadPreferred)
             if not gamepadPreferred then

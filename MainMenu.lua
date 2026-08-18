@@ -5,7 +5,7 @@ local MainMenu = ShoppingListMainMenu
 function MainMenu:Initialize(owner)
     local menu = LibMainMenu2
     menu:Init()
-    menu:AddMenuItem("ShoppingListMainMenu", {
+    menu:AddMenuItem("GravvyShoppingListMainMenu", {
         binding = "SHOPPING_LIST_TOGGLE",
         categoryName = SI_SHOPPING_LIST_TITLE,
         callback = function()

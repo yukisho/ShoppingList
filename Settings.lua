@@ -6,7 +6,7 @@ function Settings:Initialize(owner)
     local function saved()
         return owner.data:GetSettings()
     end
-    local panelName = "ShoppingListOptions"
+    local panelName = "GravvyShoppingListOptions"
     local buildVersion = owner:GetBuildVersion()
     local panel = {
         type = "panel",

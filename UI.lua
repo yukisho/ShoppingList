@@ -963,7 +963,7 @@ end
 
 function UI:RegisterAutocompleteEvent()
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_Autocomplete",
+        "GravvyShoppingList_Autocomplete",
         EVENT_MATCH_TRADING_HOUSE_ITEM_NAMES_COMPLETE,
         function(_, taskId) self:OnAutocomplete(taskId) end
     )
@@ -1438,7 +1438,7 @@ end
 
 function UI:RegisterFocusEvent()
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_GameFocusChanged",
+        "GravvyShoppingList_GameFocusChanged",
         EVENT_GAME_FOCUS_CHANGED,
         function(_, hasFocus)
             if hasFocus then

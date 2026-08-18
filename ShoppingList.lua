@@ -1,5 +1,5 @@
 ShoppingList = {
-    name = "ShoppingList",
+    name = "GravvyShoppingList",
 }
 
 local addon = ShoppingList
@@ -73,7 +73,7 @@ end
 
 function addon:RegisterEvents()
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_OpenStore",
+        "GravvyShoppingList_OpenStore",
         EVENT_OPEN_TRADING_HOUSE,
         function()
             self.storeOpen = true
@@ -92,7 +92,7 @@ function addon:RegisterEvents()
         end
     )
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_CloseStore",
+        "GravvyShoppingList_CloseStore",
         EVENT_CLOSE_TRADING_HOUSE,
         function()
             self.storeOpen = false
@@ -245,7 +245,7 @@ local function onAddOnLoaded(_, name)
     if name ~= addon.name then
         return
     end
-    EVENT_MANAGER:UnregisterForEvent("ShoppingList_Loaded", EVENT_ADD_ON_LOADED)
+    EVENT_MANAGER:UnregisterForEvent("GravvyShoppingList_Loaded", EVENT_ADD_ON_LOADED)
 
     local missing = {}
     for _, library in ipairs(REQUIRED_LIBRARIES) do
@@ -264,4 +264,8 @@ local function onAddOnLoaded(_, name)
     addon:Initialize()
 end
 
-EVENT_MANAGER:RegisterForEvent("ShoppingList_Loaded", EVENT_ADD_ON_LOADED, onAddOnLoaded)
+EVENT_MANAGER:RegisterForEvent(
+    "GravvyShoppingList_Loaded",
+    EVENT_ADD_ON_LOADED,
+    onAddOnLoaded
+)

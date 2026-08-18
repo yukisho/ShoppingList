@@ -6,9 +6,9 @@ Shopping List 0.16.3 includes public API version 1. Other add-ons can add item l
 
 Add Shopping List to your add-on manifest as an optional dependency:
 
-[CODE]## OptionalDependsOn: ShoppingList[/CODE]
+[CODE]## OptionalDependsOn: GravvyShoppingList[/CODE]
 
-Use [CODE]## DependsOn: ShoppingList[/CODE] instead if your add-on cannot function without it. Check that the API is available after your add-on loads:
+Use [CODE]## DependsOn: GravvyShoppingList[/CODE] instead if your add-on cannot function without it. The manifest dependency name is [CODE]GravvyShoppingList[/CODE], while the Lua API remains [CODE]ShoppingList.API[/CODE]. Check that the API is available after your add-on loads:
 
 [CODE]local api = ShoppingList and ShoppingList.API
 if not api or api:GetVersion() < 1 then

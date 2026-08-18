@@ -29,7 +29,7 @@ function Inventory:Initialize()
     end
 
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_InventorySlot",
+        "GravvyShoppingList_InventorySlot",
         EVENT_INVENTORY_SINGLE_SLOT_UPDATE,
         function(_, bagId)
             if self.bagKinds[bagId] then
@@ -38,22 +38,22 @@ function Inventory:Initialize()
         end
     )
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_InventoryFull",
+        "GravvyShoppingList_InventoryFull",
         EVENT_INVENTORY_FULL_UPDATE,
         function() self:QueueRefresh() end
     )
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_InventoryBank",
+        "GravvyShoppingList_InventoryBank",
         EVENT_OPEN_BANK,
         function() self:QueueRefresh() end
     )
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_InventoryCraftBag",
+        "GravvyShoppingList_InventoryCraftBag",
         EVENT_INVENTORY_ITEMS_AUTO_TRANSFERRED_TO_CRAFT_BAG,
         function() self:QueueRefresh() end
     )
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_InventoryActivated",
+        "GravvyShoppingList_InventoryActivated",
         EVENT_PLAYER_ACTIVATED,
         function() self:QueueRefresh(250) end
     )

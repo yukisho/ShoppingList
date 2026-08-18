@@ -11,11 +11,13 @@ Add Shopping List as an optional dependency in your add-on manifest if your
 integration can run without it:
 
 ```text
-## OptionalDependsOn: ShoppingList
+## OptionalDependsOn: GravvyShoppingList
 ```
 
-Use `## DependsOn: ShoppingList` instead if your add-on cannot function without
-Shopping List. Check for the API after your add-on has loaded:
+Use `## DependsOn: GravvyShoppingList` instead if your add-on cannot function
+without Shopping List. The manifest dependency name is `GravvyShoppingList`;
+the Lua API remains `ShoppingList.API`. Check for the API after your add-on has
+loaded:
 
 ```lua
 local api = ShoppingList and ShoppingList.API

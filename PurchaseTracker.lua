@@ -10,22 +10,22 @@ function Tracker:Initialize(useAGS)
     self.useAGS = useAGS
 
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_PendingPurchase",
+        "GravvyShoppingList_PendingPurchase",
         EVENT_TRADING_HOUSE_CONFIRM_ITEM_PURCHASE,
         function(_, index) self:Capture(index) end
     )
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_PurchaseResponse",
+        "GravvyShoppingList_PurchaseResponse",
         EVENT_TRADING_HOUSE_RESPONSE_RECEIVED,
         function(_, responseType, result) self:OnResponse(responseType, result) end
     )
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_PurchaseError",
+        "GravvyShoppingList_PurchaseError",
         EVENT_TRADING_HOUSE_ERROR,
         function() self.pending = nil end
     )
     EVENT_MANAGER:RegisterForEvent(
-        "ShoppingList_PurchaseTimeout",
+        "GravvyShoppingList_PurchaseTimeout",
         EVENT_TRADING_HOUSE_OPERATION_TIME_OUT,
         function(_, responseType)
             if responseType == TRADING_HOUSE_RESULT_PURCHASE_PENDING then
