@@ -20,7 +20,9 @@
 # registered trademarks or trademarks of ZeniMax Media Inc. in the United
 # States and/or other countries. All rights reserved.
 
-Localization/*.lua
+Localization/en.lua
+Localization/es.lua
+Localization/fr.lua
 
 Accessibility.lua
 AGSAdapter.lua

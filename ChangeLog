@@ -1,5 +1,8 @@
 0.16.4
 • Added complete Spanish and French localizations with English fallback.
+• Corrected localization files not loading because ESO manifests do not expand wildcard paths.
+• Kept the main list selector label independent from the item-filter dropdown.
+• Prevented runtime-only SavedVariables metadata from invalidating full backup generation.
 
 0.16.3
 • Added a versioned public API that allows other add-ons to add linked or name-only items to active shopping lists.

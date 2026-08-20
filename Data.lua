@@ -78,6 +78,40 @@ local function deepCopy(value, seen)
     return copy
 end
 
+local function copyPersistable(value, active)
+    local valueType = type(value)
+    if valueType == "nil" or valueType == "boolean" or valueType == "string" then
+        return value, true
+    end
+    if valueType == "number" then
+        if value ~= value or value == math.huge or value == -math.huge then
+            return nil, false
+        end
+        return value, true
+    end
+    if valueType ~= "table" then
+        return nil, false
+    end
+
+    active = active or {}
+    if active[value] then
+        return nil, false
+    end
+    active[value] = true
+
+    local copy = {}
+    for key, entry in pairs(value) do
+        local copiedKey, keyOk = copyPersistable(key, active)
+        local copiedEntry, entryOk = copyPersistable(entry, active)
+        if keyOk and entryOk and copiedKey ~= nil then
+            copy[copiedKey] = copiedEntry
+        end
+    end
+
+    active[value] = nil
+    return copy, true
+end
+
 local function replaceTable(target, source)
     for key in pairs(target) do
         target[key] = nil
@@ -675,7 +709,8 @@ function Data:GetSettings()
 end
 
 function Data:GetBackupData()
-    return deepCopy(self.saved)
+    local snapshot = copyPersistable(self.saved)
+    return snapshot or {}
 end
 
 function Data:RestoreBackup(snapshot)
