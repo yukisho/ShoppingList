@@ -1,3 +1,6 @@
+0.16.4
+• Added complete Spanish and French localizations with English fallback.
+
 0.16.3
 • Added a versioned public API that allows other add-ons to add linked or name-only items to active shopping lists.
 • Added safe list discovery, current-list defaults, optional notes, and stable API error codes.
