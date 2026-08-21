@@ -1,3 +1,9 @@
+0.17.0
+• Expanded the public API with atomic named-list creation and batch item addition.
+• Added optional set, trait, quality, level, and Champion Point matching overrides for integrations.
+• Added explicit list-name conflict handling, stable API v2 errors, and failing-item indexes.
+• Kept API v1 item addition and active-list discovery compatible.
+
 0.16.4
 • Added complete Spanish and French localizations with English fallback.
 • Corrected localization files not loading because ESO manifests do not expand wildcard paths.

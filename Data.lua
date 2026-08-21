@@ -847,6 +847,68 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
     return item
 end
 
+function Data:AddItemsToList(listId, sources)
+    local list = self:FindList(listId)
+    if not list then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+
+    local firstItemId = self.saved.nextItemId
+    local firstIndex = #list.items + 1
+    local items = {}
+
+    for _, source in ipairs(sources) do
+        local item, message = self:AddItemToList(
+            list.id,
+            source.name,
+            source.quantity,
+            source.itemLink,
+            nil,
+            source.note
+        )
+        if not item then
+            while #list.items >= firstIndex do
+                table.remove(list.items)
+            end
+            self.saved.nextItemId = firstItemId
+            return nil, message
+        end
+
+        if source.match then
+            item.match = deepCopy(source.match)
+        end
+        items[#items + 1] = item
+    end
+
+    return items
+end
+
+function Data:AddListWithItems(name, note, sources, selectList)
+    local previousListId = self.saved.selectedListId
+    local firstListId = self.saved.nextListId
+    local list, message = self:AddList(name, note)
+    if not list then
+        return nil, message
+    end
+
+    local items
+    items, message = self:AddItemsToList(list.id, sources)
+    if not items then
+        local _, index = self:FindList(list.id)
+        if index then
+            table.remove(self.saved.lists, index)
+        end
+        self.saved.nextListId = firstListId
+        self.saved.selectedListId = previousListId
+        return nil, message
+    end
+
+    if selectList == false then
+        self.saved.selectedListId = previousListId
+    end
+    return list, items
+end
+
 function Data:AddItem(name, quantity, itemLink, nameHash)
     return self:AddItemToList(
         self:GetCurrentList().id,
