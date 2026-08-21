@@ -2,6 +2,7 @@
 • Expanded the public API with atomic named-list creation and batch item addition.
 • Added optional set, trait, quality, level, and Champion Point matching overrides for integrations.
 • Added explicit list-name conflict handling, stable API v2 errors, and failing-item indexes.
+• Added checksummed SL2 sharing for item links, notes, matching rules, and price targets while retaining SL1 imports.
 • Kept API v1 item addition and active-list discovery compatible.
 
 0.16.4

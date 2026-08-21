@@ -468,7 +468,7 @@ function Data:AddList(name, note)
     return list
 end
 
-function Data:ImportList(name, items)
+function Data:ImportList(name, items, note)
     name = zo_strtrim(name or "")
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_NO_NAME)
@@ -476,56 +476,67 @@ function Data:ImportList(name, items)
     if type(items) ~= "table" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_NO_ITEMS)
     end
+    if note ~= nil and type(note) ~= "string" then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
+    end
     if #items > 500 then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_TOO_MANY_ITEMS)
     end
 
     local validated = {}
     for _, source in ipairs(items) do
-        local itemName = zo_strtrim(source.name or "")
-        local quantity = math.floor(tonumber(source.desired) or 0)
-        if itemName == "" or quantity < 1 or quantity > 1000000 then
+        if type(source) ~= "table" or type(source.name) ~= "string" then
             return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
         end
-        validated[#validated + 1] = { name = itemName, desired = quantity }
-    end
 
-    local list = {
-        id = self.saved.nextListId,
-        name = self:GetUniqueListName(name),
-        note = "",
-        items = {},
-        totalSpent = 0,
-        budget = nil,
-        tripActive = self:IsMultiListTripEnabled(),
-    }
-    local nextItemId = self.saved.nextItemId
-    for _, source in ipairs(validated) do
-        list.items[#list.items + 1] = {
-            id = nextItemId,
-            name = zo_strformat(SI_TOOLTIP_ITEM_NAME, source.name),
-            note = "",
-            normalizedName = normalizeName(source.name),
-            itemLink = "",
-            desired = source.desired,
-            purchased = 0,
-            completed = false,
-            purchaseHistory = {},
-            totalSpent = 0,
-            pricedQuantity = 0,
-            maxUnitPrice = nil,
-            match = {
-                qualityMode = "any",
-                levelMode = "any",
-            },
+        local itemName = zo_strtrim(source.name)
+        local quantity = tonumber(source.desired)
+        local itemLink = source.itemLink or ""
+        local itemNote = source.note or ""
+        local maxUnitPrice = source.maxUnitPrice
+        if itemName == "" or not quantity or quantity ~= math.floor(quantity)
+            or quantity < 1 or quantity > 1000000
+            or type(itemLink) ~= "string" or type(itemNote) ~= "string"
+            or (source.match ~= nil and type(source.match) ~= "table")
+        then
+            return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
+        end
+        if maxUnitPrice ~= nil then
+            maxUnitPrice = tonumber(maxUnitPrice)
+            if not maxUnitPrice or maxUnitPrice ~= math.floor(maxUnitPrice)
+                or maxUnitPrice < 1
+            then
+                return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
+            end
+        end
+        if itemLink ~= "" then
+            local _, _, linkType = ZO_LinkHandler_ParseLink(itemLink)
+            local linkedName = zo_strtrim(GetItemLinkName(itemLink) or "")
+            if linkType ~= ITEM_LINK_TYPE or linkedName == "" then
+                return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
+            end
+            itemName = linkedName
+        end
+
+        validated[#validated + 1] = {
+            name = itemName,
+            quantity = quantity,
+            itemLink = itemLink,
+            note = itemNote,
+            maxUnitPrice = maxUnitPrice,
+            match = source.match and deepCopy(source.match) or nil,
         }
-        nextItemId = nextItemId + 1
     end
 
-    self.saved.nextItemId = nextItemId
-    self.saved.nextListId = self.saved.nextListId + 1
-    self.saved.lists[#self.saved.lists + 1] = list
-    self.saved.selectedListId = list.id
+    local list, createdOrMessage = self:AddListWithItems(
+        self:GetUniqueListName(name),
+        note or "",
+        validated,
+        true
+    )
+    if not list then
+        return nil, createdOrMessage
+    end
     return list
 end
 
@@ -876,6 +887,9 @@ function Data:AddItemsToList(listId, sources)
 
         if source.match then
             item.match = deepCopy(source.match)
+        end
+        if source.maxUnitPrice then
+            item.maxUnitPrice = source.maxUnitPrice
         end
         items[#items + 1] = item
     end

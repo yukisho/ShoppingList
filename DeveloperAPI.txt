@@ -175,6 +175,20 @@ names:
 Archived lists are not returned. Changing these snapshots does not change
 Shopping List data.
 
+Fallback sharing without Shopping List
+--------------------------------------
+
+A companion add-on can show an SL2 code when Shopping List is not installed.
+SL2 preserves the list note plus each item's link, note, desired quantity,
+matching rules, and maximum unit price. Shopping List 0.17.0 can import that
+code after it is installed and the UI is reloaded.
+
+The complete language-neutral binary contract is included in ShareFormat.txt.
+Companion add-ons should implement that contract directly rather than copying
+Shopping List internal functions. SL1 remains importable, but new integrations
+should generate SL2. SLB1 is a full-account backup format and must not be used
+for companion exports.
+
 Error codes
 -----------
 
