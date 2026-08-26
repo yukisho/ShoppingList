@@ -19,6 +19,7 @@ local BULK_DIALOG = "SHOPPING_LIST_GAMEPAD_BULK_ADD"
 local BULK_DUPLICATE_DIALOG = "SHOPPING_LIST_GAMEPAD_BULK_DUPLICATES"
 local TRIP_DIALOG = "SHOPPING_LIST_GAMEPAD_TRIP_LISTS"
 local FILTER_DIALOG = "SHOPPING_LIST_GAMEPAD_FILTER"
+local SEARCH_SORT_DIALOG = "SHOPPING_LIST_GAMEPAD_SEARCH_SORT"
 local FILTER_ORDER = { "all", "needed", "completed", "overTarget", "restricted" }
 
 local function showError(message)
@@ -165,6 +166,7 @@ function Gamepad:InitializeManagementDialogs()
     self:InitializeBulkManagementDialog()
     self:InitializeTripManagementDialog()
     self:InitializeFilterManagementDialog()
+    self:InitializeSearchSortDialog()
     self:InitializeEditDialog()
     self:InitializeArchivesDialog()
     self:InitializeShareDialog()
@@ -272,6 +274,31 @@ function Gamepad:InitializeManageDialog()
                 function() self:OpenFilterFromManagement() end
             ),
             actionEntry(
+                function()
+                    return zo_strformat(
+                        GetString(SI_SHOPPING_LIST_GAMEPAD_SEARCH_SORT),
+                        self:GetGamepadSortLabel()
+                    )
+                end,
+                function() self:OpenSearchSortFromManagement() end
+            ),
+            actionEntry(
+                function()
+                    return GetString(self.owner.data:GetCurrentList().favorite
+                        and SI_SHOPPING_LIST_FAVORITE_ON
+                        or SI_SHOPPING_LIST_FAVORITE_OFF)
+                end,
+                function() self:ToggleFavoriteFromManagement() end
+            ),
+            actionEntry(
+                function()
+                    return GetString(self.owner.data:GetCurrentList().pinned
+                        and SI_SHOPPING_LIST_PINNED_ON
+                        or SI_SHOPPING_LIST_PINNED_OFF)
+                end,
+                function() self:TogglePinnedFromManagement() end
+            ),
+            actionEntry(
                 SI_SHOPPING_LIST_BUTTON_UNDO,
                 function() self:UndoFromManagement() end,
                 nil,
@@ -351,6 +378,7 @@ function Gamepad:InitializeListNameDialog()
             if self.pendingListMode == "new" then
                 self.pendingListName = ""
                 self.pendingListNote = ""
+                self.pendingListCategory = ""
             elseif self.pendingListMode == "duplicate" then
                 local baseName = zo_strformat(
                     GetString(SI_SHOPPING_LIST_COPIED_LIST_NAME),
@@ -358,9 +386,11 @@ function Gamepad:InitializeListNameDialog()
                 )
                 self.pendingListName = self.owner.data:GetUniqueListName(baseName)
                 self.pendingListNote = current.note or ""
+                self.pendingListCategory = current.category or ""
             else
                 self.pendingListName = current.name
                 self.pendingListNote = current.note or ""
+                self.pendingListCategory = current.category or ""
             end
             dialog:setupFunc()
         end,
@@ -388,6 +418,12 @@ function Gamepad:InitializeListNameDialog()
                 defaultText = GetString(SI_SHOPPING_LIST_NOTE_PLACEHOLDER),
                 maxChars = ShoppingListData.MAX_NOTE_LENGTH,
                 multiline = true,
+            }),
+            textFieldEntry(SI_SHOPPING_LIST_LIST_CATEGORY, {
+                value = function() return self.pendingListCategory end,
+                changed = function(value) self.pendingListCategory = value end,
+                defaultText = GetString(SI_SHOPPING_LIST_CATEGORY_PLACEHOLDER),
+                maxChars = ShoppingListModel.MAX_CATEGORY_LENGTH,
             }),
         },
         buttons = {
@@ -681,6 +717,67 @@ function Gamepad:InitializeFilterManagementDialog()
                 keybind = "DIALOG_NEGATIVE",
                 text = SI_GAMEPAD_BACK_OPTION,
                 callback = cancelDialog(FILTER_DIALOG),
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeSearchSortDialog()
+    local choices = {
+        { label = GetString(SI_SHOPPING_LIST_SORT_NAME_ASC), value = "name:true" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_NAME_DESC), value = "name:false" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_QUANTITY_ASC), value = "quantity:true" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_QUANTITY_DESC), value = "quantity:false" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_OWNED_ASC), value = "owned:true" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_OWNED_DESC), value = "owned:false" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_COMPLETION_ASC), value = "completion:true" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_COMPLETION_DESC), value = "completion:false" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_PRICE_ASC), value = "price:true" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_PRICE_DESC), value = "price:false" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_ADDED_ASC), value = "added:true" },
+        { label = GetString(SI_SHOPPING_LIST_SORT_ADDED_DESC), value = "added:false" },
+    }
+    self.gamepadSortChoices = choices
+
+    ZO_Dialogs_RegisterCustomDialog(SEARCH_SORT_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = { dialogType = GAMEPAD_DIALOGS.PARAMETRIC },
+        setup = function(dialog)
+            self.pendingItemSearch = self.owner.data:GetItemSearch()
+            local sort, ascending = self.owner.data:GetItemSort()
+            self.pendingItemSort = sort .. ":" .. tostring(ascending)
+            dialog:setupFunc()
+        end,
+        title = { text = SI_SHOPPING_LIST_SEARCH_SORT_TITLE },
+        parametricList = {
+            textFieldEntry(SI_SHOPPING_LIST_SEARCH_LABEL, {
+                value = function() return self.pendingItemSearch end,
+                changed = function(value) self.pendingItemSearch = value end,
+                defaultText = GetString(SI_SHOPPING_LIST_SEARCH_PLACEHOLDER),
+                maxChars = ShoppingListModel.MAX_NAME_LENGTH,
+            }),
+            dropdownEntry(
+                SI_SHOPPING_LIST_SORT_LABEL,
+                choices,
+                function() return self.pendingItemSort end,
+                function(value) self.pendingItemSort = value end
+            ),
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_GAMEPAD_SELECT_OPTION,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_SHOPPING_LIST_BUTTON_SAVE,
+                callback = function() self:SaveSearchSortFromManagement() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+                callback = cancelDialog(SEARCH_SORT_DIALOG),
             },
         },
     })
@@ -1170,7 +1267,8 @@ function Gamepad:SaveListNameFromManagement()
     if mode == "new" then
         local list, message = self.owner.data:AddList(
             self.pendingListName,
-            self.pendingListNote
+            self.pendingListNote,
+            self.pendingListCategory
         )
         if not list then
             showError(message)
@@ -1180,7 +1278,8 @@ function Gamepad:SaveListNameFromManagement()
         local list, message = self.owner.data:DuplicateList(
             current.id,
             self.pendingListName,
-            self.pendingListNote
+            self.pendingListNote,
+            self.pendingListCategory
         )
         if not list then
             showError(message)
@@ -1196,6 +1295,14 @@ function Gamepad:SaveListNameFromManagement()
             return
         end
         self.owner.data:UpdateListNote(current.id, self.pendingListNote)
+        local categoryOk, categoryMessage = self.owner.data:UpdateListCategory(
+            current.id,
+            self.pendingListCategory
+        )
+        if not categoryOk then
+            showError(categoryMessage)
+            return
+        end
     end
 
     ZO_Dialogs_ReleaseDialogOnButtonPress(LIST_NAME_DIALOG)
@@ -1226,6 +1333,32 @@ function Gamepad:ToggleRecurringFromManagement()
     self:RefreshAfterManagement(GetString(list.recurring
         and SI_SHOPPING_LIST_STATUS_RECURRING_ON
         or SI_SHOPPING_LIST_STATUS_RECURRING_OFF))
+end
+
+function Gamepad:ToggleFavoriteFromManagement()
+    local list = self.owner.data:GetCurrentList()
+    local ok, message = self.owner.data:SetListFavorite(list.id, not list.favorite)
+    if not ok then
+        showError(message)
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
+    self:RefreshAfterManagement(GetString(list.favorite
+        and SI_SHOPPING_LIST_STATUS_FAVORITE_ON
+        or SI_SHOPPING_LIST_STATUS_FAVORITE_OFF))
+end
+
+function Gamepad:TogglePinnedFromManagement()
+    local list = self.owner.data:GetCurrentList()
+    local ok, message = self.owner.data:SetListPinned(list.id, not list.pinned)
+    if not ok then
+        showError(message)
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
+    self:RefreshAfterManagement(GetString(list.pinned
+        and SI_SHOPPING_LIST_STATUS_PINNED_ON
+        or SI_SHOPPING_LIST_STATUS_PINNED_OFF))
 end
 
 function Gamepad:OpenResetProgressFromManagement()
@@ -1361,6 +1494,47 @@ function Gamepad:SetFilterFromManagement(filter)
         GetString(SI_SHOPPING_LIST_STATUS_FILTER_UPDATED),
         self:GetGamepadFilterLabel()
     ))
+end
+
+function Gamepad:GetGamepadSortLabel()
+    local sort, ascending = self.owner.data:GetItemSort()
+    local value = sort .. ":" .. tostring(ascending)
+    for _, choice in ipairs(self.gamepadSortChoices or {}) do
+        if choice.value == value then
+            return choice.label
+        end
+    end
+    return GetString(SI_SHOPPING_LIST_SORT_ADDED_ASC)
+end
+
+function Gamepad:OpenSearchSortFromManagement()
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(SEARCH_SORT_DIALOG)
+    end)
+end
+
+function Gamepad:SaveSearchSortFromManagement()
+    local sort, ascending = string.match(
+        self.pendingItemSort or "",
+        "^([^:]+):(true|false)$"
+    )
+    local searchOk, searchMessage = self.owner.data:SetItemSearch(
+        self.pendingItemSearch or ""
+    )
+    if not searchOk then
+        showError(searchMessage)
+        return
+    end
+    local sortOk, sortMessage = self.owner.data:SetItemSort(
+        sort,
+        ascending == "true"
+    )
+    if not sortOk then
+        showError(sortMessage)
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(SEARCH_SORT_DIALOG)
+    self:RefreshAfterManagement(GetString(SI_SHOPPING_LIST_STATUS_VIEW_UPDATED))
 end
 
 function Gamepad:UndoFromManagement()

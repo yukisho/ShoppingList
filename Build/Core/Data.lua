@@ -4,7 +4,7 @@ local Data = ShoppingListData
 local DEFAULT_LIST_NAME = GetString(SI_SHOPPING_LIST_DEFAULT_LIST_NAME)
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = ShoppingListModel.MAX_NOTE_LENGTH
-local CURRENT_SCHEMA_VERSION = 4
+local CURRENT_SCHEMA_VERSION = 5
 local MAX_RECOVERY_SNAPSHOTS = 5
 local MAX_EXTERNAL_SNAPSHOTS = 10
 local MAX_BACKUP_LISTS = ShoppingListModel.MAX_LISTS
@@ -23,6 +23,7 @@ local VALID_FILTERS = {
     overTarget = true,
     restricted = true,
 }
+local DEFAULT_ITEM_SORT = "added"
 
 local defaults = {
     schemaVersion = CURRENT_SCHEMA_VERSION,
@@ -50,6 +51,12 @@ local defaults = {
             tripActive = true,
             recurring = false,
             resetCount = 0,
+            favorite = false,
+            pinned = false,
+            category = "",
+            itemSearch = "",
+            itemSort = DEFAULT_ITEM_SORT,
+            itemSortAscending = true,
         },
     },
     settings = {
@@ -85,6 +92,14 @@ local function normalizeNote(note)
         note = string.sub(note, 1, MAX_NOTE_LENGTH)
     end
     return note
+end
+
+local function normalizeCategory(category)
+    category = zo_strtrim(tostring(category or ""))
+    if #category > ShoppingListModel.MAX_CATEGORY_LENGTH then
+        category = string.sub(category, 1, ShoppingListModel.MAX_CATEGORY_LENGTH)
+    end
+    return category
 end
 
 local function deepCopy(value, seen)
@@ -331,6 +346,20 @@ function Data:Normalize()
             list.items = type(list.items) == "table" and list.items or {}
             list.tripActive = list.tripActive == true
             list.recurring = list.recurring == true
+            list.favorite = list.favorite == true
+            list.pinned = list.pinned == true
+            list.category = normalizeCategory(list.category)
+            list.itemSearch = zo_strtrim(tostring(list.itemSearch or ""))
+            if #list.itemSearch > ShoppingListModel.MAX_NAME_LENGTH then
+                list.itemSearch = string.sub(
+                    list.itemSearch,
+                    1,
+                    ShoppingListModel.MAX_NAME_LENGTH
+                )
+            end
+            list.itemSort = ShoppingListModel.ITEM_SORTS[list.itemSort]
+                and list.itemSort or DEFAULT_ITEM_SORT
+            list.itemSortAscending = list.itemSortAscending ~= false
             list.resetCount = math.max(0, math.floor(tonumber(list.resetCount) or 0))
             list.lastResetAt = math.max(0, math.floor(tonumber(list.lastResetAt) or 0))
             if list.lastResetAt == 0 then
@@ -358,6 +387,10 @@ function Data:Normalize()
                 item.desired = math.max(1, tonumber(item.desired) or 1)
                 item.purchased = math.max(0, tonumber(item.purchased) or 0)
                 item.targetMode = ShoppingListModel:NormalizeTargetMode(item.targetMode)
+                item.addedAt = math.max(
+                    0,
+                    math.floor(tonumber(item.addedAt) or tonumber(item.id) or 0)
+                )
                 item.match = ShoppingListModel:NormalizeMatchingRule(item.match, true)
                 if languageChanged and item.itemLink and item.itemLink ~= "" then
                     local details = readLinkDetails(item.itemLink)
@@ -432,6 +465,10 @@ local migrations = {
     [3] = function(candidate)
         candidate:Normalize()
         candidate.saved.schemaVersion = 4
+    end,
+    [4] = function(candidate)
+        candidate:Normalize()
+        candidate.saved.schemaVersion = 5
     end,
 }
 
@@ -525,6 +562,7 @@ local function validateItem(item, itemIds)
         or not optionalString(item.note, MAX_NOTE_LENGTH)
         or not optionalString(item.itemLink, MAX_LINK_LENGTH)
         or not optionalWholeNumber(item.itemId, 1, MAX_U32)
+        or not optionalWholeNumber(item.addedAt, 0, MAX_SAFE_INTEGER)
         or not isWholeNumber(item.desired, 1, MAX_QUANTITY)
         or not isWholeNumber(item.purchased or 0, 0, MAX_QUANTITY)
         or not ShoppingListModel:IsValidTargetMode(item.targetMode or "buy")
@@ -564,6 +602,12 @@ local function validateList(list, archived, listIds, itemIds, totals)
         or not optionalWholeNumber(list.budget, 1, ShoppingListModel.MAX_PRICE)
         or not optionalBoolean(list.tripActive)
         or not optionalBoolean(list.recurring)
+        or not optionalBoolean(list.favorite)
+        or not optionalBoolean(list.pinned)
+        or not optionalString(list.category, ShoppingListModel.MAX_CATEGORY_LENGTH)
+        or not optionalString(list.itemSearch, MAX_NAME_LENGTH)
+        or (list.itemSort ~= nil and not ShoppingListModel.ITEM_SORTS[list.itemSort])
+        or not optionalBoolean(list.itemSortAscending)
         or not optionalWholeNumber(list.resetCount, 0, MAX_SAFE_INTEGER)
         or not optionalWholeNumber(list.lastResetAt, 0, MAX_SAFE_INTEGER)
     then
@@ -1302,6 +1346,23 @@ function Data:GetLists()
     return self.saved.lists
 end
 
+function Data:GetDisplayLists()
+    local result = {}
+    for index, list in ipairs(self.saved.lists) do
+        result[#result + 1] = { list = list, index = index }
+    end
+    table.sort(result, function(left, right)
+        if left.list.pinned ~= right.list.pinned then
+            return left.list.pinned == true
+        end
+        return left.index < right.index
+    end)
+    for index, entry in ipairs(result) do
+        result[index] = entry.list
+    end
+    return result
+end
+
 function Data:GetArchivedLists()
     return self.saved.archivedLists
 end
@@ -1511,7 +1572,7 @@ function Data:GetStoredListCount()
     return count
 end
 
-function Data:AddList(name, note)
+function Data:AddList(name, note, category)
     name = zo_strtrim(name or "")
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_ENTER_LIST_NAME)
@@ -1524,6 +1585,11 @@ function Data:AddList(name, note)
     end
     if #(note or "") > ShoppingListModel.MAX_NOTE_LENGTH then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    if category ~= nil and (type(category) ~= "string"
+        or #category > ShoppingListModel.MAX_CATEGORY_LENGTH)
+    then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_CATEGORY_TOO_LONG)
     end
     if self:GetStoredListCount() >= ShoppingListModel.MAX_LISTS then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_TOO_MANY_LISTS)
@@ -1543,6 +1609,12 @@ function Data:AddList(name, note)
         tripActive = self:IsMultiListTripEnabled(),
         recurring = false,
         resetCount = 0,
+        favorite = false,
+        pinned = false,
+        category = normalizeCategory(category),
+        itemSearch = "",
+        itemSort = DEFAULT_ITEM_SORT,
+        itemSortAscending = true,
     }
     self.saved.nextListId = self.saved.nextListId + 1
     self.saved.lists[#self.saved.lists + 1] = list
@@ -1649,7 +1721,7 @@ function Data:ImportList(name, items, note, recurring)
     return list
 end
 
-function Data:DuplicateList(id, name, note)
+function Data:DuplicateList(id, name, note, category)
     local source = self:FindList(id)
     if not source then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
@@ -1667,6 +1739,12 @@ function Data:DuplicateList(id, name, note)
         or #copiedNote > ShoppingListModel.MAX_NOTE_LENGTH
     then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    local copiedCategory = category ~= nil and category or source.category or ""
+    if type(copiedCategory) ~= "string"
+        or #copiedCategory > ShoppingListModel.MAX_CATEGORY_LENGTH
+    then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_CATEGORY_TOO_LONG)
     end
     if self:GetStoredListCount() >= ShoppingListModel.MAX_LISTS then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_TOO_MANY_LISTS)
@@ -1686,6 +1764,12 @@ function Data:DuplicateList(id, name, note)
         tripActive = self:IsMultiListTripEnabled(),
         recurring = source.recurring == true,
         resetCount = 0,
+        favorite = false,
+        pinned = false,
+        category = normalizeCategory(copiedCategory),
+        itemSearch = "",
+        itemSort = source.itemSort or DEFAULT_ITEM_SORT,
+        itemSortAscending = source.itemSortAscending ~= false,
     }
     self.saved.nextListId = self.saved.nextListId + 1
 
@@ -1703,6 +1787,7 @@ function Data:DuplicateList(id, name, note)
             nameHash = item.nameHash,
             itemLink = item.itemLink,
             itemId = item.itemId,
+            addedAt = GetTimeStamp(),
             desired = item.desired,
             purchased = 0,
             targetMode = ShoppingListModel:NormalizeTargetMode(item.targetMode),
@@ -1751,6 +1836,44 @@ function Data:UpdateListNote(id, note)
         return false, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
     end
     list.note = note
+    return true
+end
+
+function Data:UpdateListCategory(id, category)
+    local list = self:FindList(id)
+    if not list then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if type(category) ~= "string"
+        or #category > ShoppingListModel.MAX_CATEGORY_LENGTH
+    then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_CATEGORY_TOO_LONG)
+    end
+    list.category = normalizeCategory(category)
+    return true
+end
+
+function Data:SetListFavorite(id, favorite)
+    local list = self:FindList(id)
+    if not list then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if type(favorite) ~= "boolean" then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LIST_ORGANIZATION)
+    end
+    list.favorite = favorite
+    return true
+end
+
+function Data:SetListPinned(id, pinned)
+    local list = self:FindList(id)
+    if not list then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if type(pinned) ~= "boolean" then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LIST_ORGANIZATION)
+    end
+    list.pinned = pinned
     return true
 end
 
@@ -2009,13 +2132,109 @@ function Data:ItemPassesFilter(item, filter)
     return true
 end
 
-function Data:GetFilteredShoppingItems()
-    local result = {}
-    local filter = self:GetItemFilter()
-    for _, item in ipairs(self:GetShoppingItems()) do
-        if self:ItemPassesFilter(item, filter) then
-            result[#result + 1] = item
+function Data:GetItemSearch()
+    return self:GetCurrentList().itemSearch or ""
+end
+
+function Data:SetItemSearch(search)
+    if type(search) ~= "string"
+        or #search > ShoppingListModel.MAX_NAME_LENGTH
+    then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_SEARCH_TOO_LONG)
+    end
+    self:GetCurrentList().itemSearch = zo_strtrim(search)
+    return true
+end
+
+function Data:GetItemSort()
+    local list = self:GetCurrentList()
+    return list.itemSort or DEFAULT_ITEM_SORT, list.itemSortAscending ~= false
+end
+
+function Data:SetItemSort(sort, ascending)
+    if not ShoppingListModel.ITEM_SORTS[sort] or type(ascending) ~= "boolean" then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_SORT)
+    end
+    local list = self:GetCurrentList()
+    list.itemSort = sort
+    list.itemSortAscending = ascending
+    return true
+end
+
+function Data:ItemPassesSearch(item, search)
+    search = zo_strlower(zo_strtrim(search or ""))
+    if search == "" then
+        return true
+    end
+    local rule = item.match or {}
+    local haystack = table.concat({
+        item.normalizedName or normalizeName(item.name),
+        zo_strlower(item.note or ""),
+        rule.normalizedSetName or normalizeName(rule.setName),
+    }, "\n")
+    for term in string.gmatch(search, "%S+") do
+        if not string.find(haystack, term, 1, true) then
+            return false
         end
+    end
+    return true
+end
+
+local function itemSortValue(data, item, sort)
+    if sort == "name" then
+        return item.normalizedName or normalizeName(item.name)
+    elseif sort == "quantity" then
+        return tonumber(item.desired) or 0
+    elseif sort == "owned" then
+        return data:GetOwnedQuantity(item)
+    elseif sort == "completion" then
+        return data:IsItemComplete(item) and 1 or 0
+    elseif sort == "price" then
+        return tonumber(item.maxUnitPrice)
+    end
+    return tonumber(item.addedAt) or tonumber(item.id) or 0
+end
+
+function Data:GetFilteredShoppingItems()
+    local decorated = {}
+    local filter = self:GetItemFilter()
+    local search = self:GetItemSearch()
+    local sort, ascending = self:GetItemSort()
+    for _, item in ipairs(self:GetShoppingItems()) do
+        if self:ItemPassesFilter(item, filter)
+            and self:ItemPassesSearch(item, search)
+        then
+            decorated[#decorated + 1] = {
+                item = item,
+                value = itemSortValue(self, item, sort),
+            }
+        end
+    end
+
+    table.sort(decorated, function(left, right)
+        if left.value == nil or right.value == nil then
+            if left.value == nil and right.value ~= nil then
+                return false
+            elseif left.value ~= nil and right.value == nil then
+                return true
+            end
+        elseif left.value ~= right.value then
+            if ascending then
+                return left.value < right.value
+            end
+            return left.value > right.value
+        end
+        local leftName = left.item.normalizedName or normalizeName(left.item.name)
+        local rightName = right.item.normalizedName or normalizeName(right.item.name)
+        if leftName ~= rightName then
+            return leftName < rightName
+        end
+        return left.item.id < right.item.id
+    end)
+
+    local result = {}
+    for index, entry in ipairs(decorated) do
+        result[index] = entry.item
     end
     return result
 end
@@ -2121,6 +2340,7 @@ function Data:BuildItemCandidate(source)
         nameHash = source.nameHash,
         itemLink = itemLink,
         itemId = details.itemId,
+        addedAt = GetTimeStamp(),
         desired = quantity,
         purchased = 0,
         targetMode = targetMode,

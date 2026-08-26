@@ -3,6 +3,7 @@ ShoppingListModel = {
     MAX_ITEMS_PER_LIST = 500,
     MAX_NAME_LENGTH = 512,
     MAX_NOTE_LENGTH = 2000,
+    MAX_CATEGORY_LENGTH = 80,
     MAX_LINK_LENGTH = 2048,
     MAX_QUANTITY = 1000000,
     MAX_PRICE = 4294967295,
@@ -29,6 +30,14 @@ ShoppingListModel = {
         prompt = true,
         merge = true,
         replace = true,
+    },
+    ITEM_SORTS = {
+        name = true,
+        quantity = true,
+        owned = true,
+        completion = true,
+        price = true,
+        added = true,
     },
 }
 

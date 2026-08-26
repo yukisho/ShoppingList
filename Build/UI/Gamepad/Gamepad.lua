@@ -22,6 +22,30 @@ local function formatCompactGold(value)
     return zo_strformat(GetString(SI_SHOPPING_LIST_GOLD_SHORT), value)
 end
 
+local function formatListName(list)
+    local name = list.note and list.note ~= "" and zo_strformat(
+        GetString(SI_SHOPPING_LIST_NOTE_MARKER),
+        list.name
+    ) or list.name
+    if list.category and list.category ~= "" then
+        name = zo_strformat(
+            GetString(SI_SHOPPING_LIST_CATEGORY_MARKER),
+            list.category,
+            name
+        )
+    end
+    if list.favorite then
+        name = zo_strformat(GetString(SI_SHOPPING_LIST_FAVORITE_MARKER), name)
+    end
+    if list.pinned then
+        name = zo_strformat(GetString(SI_SHOPPING_LIST_PINNED_MARKER), name)
+    end
+    if list.recurring then
+        name = zo_strformat(GetString(SI_SHOPPING_LIST_RECURRING_MARKER), name)
+    end
+    return name
+end
+
 function Gamepad:New(owner)
     return setmetatable({ owner = owner, dirty = true }, { __index = self })
 end
@@ -446,16 +470,7 @@ function Gamepad:Refresh(force)
     local selectedIndex
     local current = self.owner.data:GetCurrentList()
     local shoppingLists = self.owner.data:GetShoppingLists()
-    local currentName = current.note and current.note ~= "" and zo_strformat(
-        GetString(SI_SHOPPING_LIST_NOTE_MARKER),
-        current.name
-    ) or current.name
-    if current.recurring then
-        currentName = zo_strformat(
-            GetString(SI_SHOPPING_LIST_RECURRING_MARKER),
-            currentName
-        )
-    end
+    local currentName = formatListName(current)
     if self.owner.data:IsMultiListTripEnabled() then
         self.listName:SetText(zo_strformat(
             GetString(SI_SHOPPING_LIST_GAMEPAD_TRIP_HEADING),
@@ -566,13 +581,19 @@ function Gamepad:Refresh(force)
 end
 
 function Gamepad:SwitchList(direction)
-    local lists = self.owner.data:GetLists()
+    local lists = self.owner.data:GetDisplayLists()
     if #lists < 2 then
         return
     end
 
     local current = self.owner.data:GetCurrentList()
-    local _, index = self.owner.data:FindList(current.id)
+    local index = 1
+    for listIndex, list in ipairs(lists) do
+        if list.id == current.id then
+            index = listIndex
+            break
+        end
+    end
     local target = ((index - 1 + direction) % #lists) + 1
     self.owner.data:SelectList(lists[target].id)
     self:SetStatus("")

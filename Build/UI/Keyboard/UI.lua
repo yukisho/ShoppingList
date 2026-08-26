@@ -10,7 +10,7 @@ local MAX_HEIGHT = 900
 local MAX_ROWS = 24
 local ROW_TOP = 123
 local ROW_HEIGHT = 33
-local FOOTER_HEIGHT = 108
+local FOOTER_HEIGHT = 132
 local SUGGESTION_ROWS = 6
 local REMOVE_ITEM_DIALOG = "SHOPPING_LIST_CONFIRM_REMOVE_ITEM"
 local RESET_PROGRESS_DIALOG = "SHOPPING_LIST_CONFIRM_RESET_PROGRESS"
@@ -194,10 +194,10 @@ function UI:Initialize()
 
     self.page = makeLabel(window, "ZoFontGameSmall")
     self.page:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
-    self.page:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, -14, -82)
+    self.page:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, -14, -104)
     self.page:SetDimensions(160, 20)
 
-    local filterContainer, filterCombo = makeCombo(window, "ItemFilter", 142)
+    local filterContainer, filterCombo = makeCombo(window, "ItemFilter", 105)
     filterContainer:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 14, -78)
     local filterChoices = {
         { label = GetString(SI_SHOPPING_LIST_FILTER_ALL), value = "all" },
@@ -220,6 +220,62 @@ function UI:Initialize()
         self.filterLabels[choice.value] = choice.label
     end
     self.filterCombo = filterCombo
+
+    local sortContainer, sortCombo = makeCombo(window, "ItemSort", 120)
+    sortContainer:SetAnchor(LEFT, filterContainer, RIGHT, 5, 0)
+    local sortChoices = {
+        { label = GetString(SI_SHOPPING_LIST_SORT_NAME_ASC), sort = "name", ascending = true },
+        { label = GetString(SI_SHOPPING_LIST_SORT_NAME_DESC), sort = "name", ascending = false },
+        { label = GetString(SI_SHOPPING_LIST_SORT_QUANTITY_ASC), sort = "quantity", ascending = true },
+        { label = GetString(SI_SHOPPING_LIST_SORT_QUANTITY_DESC), sort = "quantity", ascending = false },
+        { label = GetString(SI_SHOPPING_LIST_SORT_OWNED_ASC), sort = "owned", ascending = true },
+        { label = GetString(SI_SHOPPING_LIST_SORT_OWNED_DESC), sort = "owned", ascending = false },
+        { label = GetString(SI_SHOPPING_LIST_SORT_COMPLETION_ASC), sort = "completion", ascending = true },
+        { label = GetString(SI_SHOPPING_LIST_SORT_COMPLETION_DESC), sort = "completion", ascending = false },
+        { label = GetString(SI_SHOPPING_LIST_SORT_PRICE_ASC), sort = "price", ascending = true },
+        { label = GetString(SI_SHOPPING_LIST_SORT_PRICE_DESC), sort = "price", ascending = false },
+        { label = GetString(SI_SHOPPING_LIST_SORT_ADDED_ASC), sort = "added", ascending = true },
+        { label = GetString(SI_SHOPPING_LIST_SORT_ADDED_DESC), sort = "added", ascending = false },
+    }
+    self.sortLabels = {}
+    for _, choice in ipairs(sortChoices) do
+        local sort = choice.sort
+        local ascending = choice.ascending
+        sortCombo:AddItem(sortCombo:CreateItemEntry(choice.label, function()
+            self.owner.data:SetItemSort(sort, ascending)
+            self.offset = 0
+            self:Refresh()
+            self.owner.gamepad:Refresh()
+        end))
+        self.sortLabels[sort .. ":" .. tostring(ascending)] = choice.label
+    end
+    self.sortContainer = sortContainer
+    self.sortCombo = sortCombo
+
+    local searchBackdrop, searchEdit = makeEdit(window, 80)
+    searchBackdrop:SetAnchor(LEFT, sortContainer, RIGHT, 5, 0)
+    searchBackdrop:SetAnchor(RIGHT, window, RIGHT, -14, 0)
+    searchEdit:SetDefaultText(GetString(SI_SHOPPING_LIST_SEARCH_PLACEHOLDER))
+    searchEdit:SetMaxInputChars(ShoppingListModel.MAX_NAME_LENGTH)
+    searchEdit:SetHandler("OnTextChanged", function()
+        if self.suppressItemSearch then
+            return
+        end
+        local ok, message = self.owner.data:SetItemSearch(searchEdit:GetText())
+        if not ok then
+            self:SetStatus(message, true)
+            return
+        end
+        self.offset = 0
+        self:Refresh()
+        self.owner.gamepad:Refresh()
+    end)
+    searchEdit:SetHandler("OnEscape", function()
+        searchEdit:SetText("")
+        searchEdit:LoseFocus()
+    end)
+    self.searchBackdrop = searchBackdrop
+    self.searchEdit = searchEdit
 
     local nameBackdrop, nameEdit = makeEdit(window, 235)
     nameBackdrop:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 14, -48)
@@ -463,7 +519,7 @@ end
 
 function UI:CreateListDialog()
     local dialog = WINDOW_MANAGER:CreateTopLevelWindow("ShoppingListNameWindow")
-    dialog:SetDimensions(420, 420)
+    dialog:SetDimensions(420, 510)
     dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     dialog:SetClampedToScreen(true)
     dialog:SetMouseEnabled(true)
@@ -570,23 +626,58 @@ function UI:CreateListDialog()
     self.listDialogNoteBackdrop = noteBackdrop
     self.listDialogNote = noteEdit
 
+    self.listDialogCategoryLabel = makeLabel(dialog, "ZoFontGame")
+    self.listDialogCategoryLabel:SetText(GetString(SI_SHOPPING_LIST_LIST_CATEGORY))
+    self.listDialogCategoryLabel:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 334)
+    self.listDialogCategoryLabel:SetDimensions(384, 26)
+
+    local categoryBackdrop, categoryEdit = makeEdit(dialog, 384)
+    categoryBackdrop:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 362)
+    categoryEdit:SetMaxInputChars(ShoppingListModel.MAX_CATEGORY_LENGTH)
+    categoryEdit:SetDefaultText(GetString(SI_SHOPPING_LIST_CATEGORY_PLACEHOLDER))
+    categoryEdit:SetHandler("OnEscape", function() self:CloseListDialog() end)
+    self.listDialogCategoryBackdrop = categoryBackdrop
+    self.listDialogCategory = categoryEdit
+
     local recurring = makeButton(
         dialog,
         GetString(SI_SHOPPING_LIST_RECURRING_OFF),
-        180
+        120
     )
-    recurring:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 340)
+    recurring:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 400)
     recurring:SetHandler("OnClicked", function()
         self:ToggleCurrentListRecurring()
     end)
     self.listDialogRecurring = recurring
+
+    local favorite = makeButton(
+        dialog,
+        GetString(SI_SHOPPING_LIST_FAVORITE_OFF),
+        120
+    )
+    favorite:SetAnchor(LEFT, recurring, RIGHT, 8, 0)
+    favorite:SetHandler("OnClicked", function()
+        self:ToggleCurrentListFavorite()
+    end)
+    self.listDialogFavorite = favorite
+
+    local pinned = makeButton(
+        dialog,
+        GetString(SI_SHOPPING_LIST_PINNED_OFF),
+        120
+    )
+    pinned:SetAnchor(LEFT, favorite, RIGHT, 8, 0)
+    pinned:SetHandler("OnClicked", function()
+        self:ToggleCurrentListPinned()
+    end)
+    self.listDialogPinned = pinned
 
     local resetProgress = makeButton(
         dialog,
         GetString(SI_SHOPPING_LIST_BUTTON_RESET_PROGRESS),
         180
     )
-    resetProgress:SetAnchor(LEFT, recurring, RIGHT, 8, 0)
+    resetProgress:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 437)
     resetProgress:SetHandler("OnClicked", function()
         self:ConfirmResetListProgress()
     end)
@@ -611,6 +702,7 @@ end
 function UI:CloseListDialog()
     self.listDialogName:LoseFocus()
     self.listDialogNote:LoseFocus()
+    self.listDialogCategory:LoseFocus()
     self.listDialog:SetHidden(true)
 end
 
@@ -635,6 +727,12 @@ function UI:UpdateListArchiveButtons()
     self.listDialogRecurring:SetText(GetString(list.recurring
         and SI_SHOPPING_LIST_RECURRING_ON
         or SI_SHOPPING_LIST_RECURRING_OFF))
+    self.listDialogFavorite:SetText(GetString(list.favorite
+        and SI_SHOPPING_LIST_FAVORITE_ON
+        or SI_SHOPPING_LIST_FAVORITE_OFF))
+    self.listDialogPinned:SetText(GetString(list.pinned
+        and SI_SHOPPING_LIST_PINNED_ON
+        or SI_SHOPPING_LIST_PINNED_OFF))
     self.listDialogResetProgress:SetEnabled(
         self.owner.data:ListHasPurchaseProgress(list)
     )
@@ -642,6 +740,32 @@ function UI:UpdateListArchiveButtons()
         GetString(SI_SHOPPING_LIST_ARCHIVED_COUNT),
         #self.owner.data:GetArchivedLists()
     ))
+end
+
+function UI:ToggleCurrentListFavorite()
+    local list = self.owner.data:GetCurrentList()
+    local ok, message = self.owner.data:SetListFavorite(list.id, not list.favorite)
+    if not ok then
+        self:SetStatus(message, true)
+        return
+    end
+    self.listSignature = nil
+    self:UpdateListArchiveButtons()
+    self:Refresh()
+    self.owner.gamepad:Refresh()
+end
+
+function UI:ToggleCurrentListPinned()
+    local list = self.owner.data:GetCurrentList()
+    local ok, message = self.owner.data:SetListPinned(list.id, not list.pinned)
+    if not ok then
+        self:SetStatus(message, true)
+        return
+    end
+    self.listSignature = nil
+    self:UpdateListArchiveButtons()
+    self:Refresh()
+    self.owner.gamepad:Refresh()
 end
 
 function UI:ToggleCurrentListRecurring()
@@ -862,7 +986,7 @@ end
 
 function UI:RefreshListSelector()
     local current = self.owner.data:GetCurrentList()
-    local lists = self.owner.data:GetLists()
+    local lists = self.owner.data:GetDisplayLists()
     local signature = {}
     local tripEnabled = self.owner.data:IsMultiListTripEnabled()
     for _, list in ipairs(lists) do
@@ -872,6 +996,9 @@ function UI:RefreshListSelector()
             list.note or "",
             tostring(list.tripActive),
             tostring(list.recurring),
+            tostring(list.favorite),
+            tostring(list.pinned),
+            list.category or "",
             tostring(tripEnabled),
         }, ":")
     end
@@ -886,6 +1013,25 @@ function UI:RefreshListSelector()
                 GetString(SI_SHOPPING_LIST_NOTE_MARKER),
                 list.name
             ) or list.name
+            if list.category and list.category ~= "" then
+                displayName = zo_strformat(
+                    GetString(SI_SHOPPING_LIST_CATEGORY_MARKER),
+                    list.category,
+                    displayName
+                )
+            end
+            if list.favorite then
+                displayName = zo_strformat(
+                    GetString(SI_SHOPPING_LIST_FAVORITE_MARKER),
+                    displayName
+                )
+            end
+            if list.pinned then
+                displayName = zo_strformat(
+                    GetString(SI_SHOPPING_LIST_PINNED_MARKER),
+                    displayName
+                )
+            end
             if list.recurring then
                 displayName = zo_strformat(
                     GetString(SI_SHOPPING_LIST_RECURRING_MARKER),
@@ -907,6 +1053,25 @@ function UI:RefreshListSelector()
         GetString(SI_SHOPPING_LIST_NOTE_MARKER),
         current.name
     ) or current.name
+    if current.category and current.category ~= "" then
+        currentName = zo_strformat(
+            GetString(SI_SHOPPING_LIST_CATEGORY_MARKER),
+            current.category,
+            currentName
+        )
+    end
+    if current.favorite then
+        currentName = zo_strformat(
+            GetString(SI_SHOPPING_LIST_FAVORITE_MARKER),
+            currentName
+        )
+    end
+    if current.pinned then
+        currentName = zo_strformat(
+            GetString(SI_SHOPPING_LIST_PINNED_MARKER),
+            currentName
+        )
+    end
     if current.recurring then
         currentName = zo_strformat(
             GetString(SI_SHOPPING_LIST_RECURRING_MARKER),
@@ -956,19 +1121,26 @@ function UI:OpenListDialog(mode)
     self.listDialogClearCompleted:SetHidden(mode ~= "rename")
     self.listDialogRecurring:SetHidden(mode ~= "rename")
     self.listDialogResetProgress:SetHidden(mode ~= "rename")
+    self.listDialogFavorite:SetHidden(mode ~= "rename")
+    self.listDialogPinned:SetHidden(mode ~= "rename")
     self.listDialogNoteLabel:SetHidden(mode == "delete")
     self.listDialogNoteBackdrop:SetHidden(mode == "delete")
-    self.listDialog:SetHeight(mode == "delete" and 290 or 420)
+    self.listDialogCategoryLabel:SetHidden(mode == "delete")
+    self.listDialogCategoryBackdrop:SetHidden(mode == "delete")
+    self.listDialog:SetHeight(mode == "delete" and 290
+        or (mode == "rename" and 510 or 450))
 
     if mode == "new" then
         self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_NEW_LIST_TITLE))
         self.listDialogName:SetText("")
         self.listDialogNote:SetText("")
+        self.listDialogCategory:SetText("")
         self.listDialogConfirm:SetText(GetString(SI_SHOPPING_LIST_BUTTON_CREATE))
     elseif mode == "rename" then
         self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_GAMEPAD_MANAGE_TITLE))
         self.listDialogName:SetText(current.name)
         self.listDialogNote:SetText(current.note or "")
+        self.listDialogCategory:SetText(current.category or "")
         self.listDialogConfirm:SetText(GetString(SI_SHOPPING_LIST_BUTTON_SAVE))
     elseif mode == "duplicate" then
         local baseName = zo_strformat(
@@ -984,6 +1156,7 @@ function UI:OpenListDialog(mode)
         self.listDialogTitle:SetText(GetString(SI_SHOPPING_LIST_DUPLICATE_LIST_TITLE))
         self.listDialogName:SetText(name)
         self.listDialogNote:SetText(current.note or "")
+        self.listDialogCategory:SetText(current.category or "")
         self.listDialogConfirm:SetText(GetString(SI_SHOPPING_LIST_BUTTON_DUPLICATE))
     else
         if #self.owner.data:GetLists() == 1 then
@@ -1012,7 +1185,8 @@ function UI:CompleteListDialog()
     if mode == "new" then
         local list, message = self.owner.data:AddList(
             self.listDialogName:GetText(),
-            self.listDialogNote:GetText()
+            self.listDialogNote:GetText(),
+            self.listDialogCategory:GetText()
         )
         if not list then
             self:SetStatus(message, true)
@@ -1025,11 +1199,20 @@ function UI:CompleteListDialog()
             return
         end
         self.owner.data:UpdateListNote(current.id, self.listDialogNote:GetText())
+        local categoryOk, categoryMessage = self.owner.data:UpdateListCategory(
+            current.id,
+            self.listDialogCategory:GetText()
+        )
+        if not categoryOk then
+            self:SetStatus(categoryMessage, true)
+            return
+        end
     elseif mode == "duplicate" then
         local list, message = self.owner.data:DuplicateList(
             current.id,
             self.listDialogName:GetText(),
-            self.listDialogNote:GetText()
+            self.listDialogNote:GetText(),
+            self.listDialogCategory:GetText()
         )
         if not list then
             self:SetStatus(message, true)
@@ -1430,6 +1613,17 @@ function UI:Refresh()
         self.filterLabels[self.owner.data:GetItemFilter()]
             or self.filterLabels.all
     )
+    local sort, ascending = self.owner.data:GetItemSort()
+    self.sortCombo:SetSelectedItem(
+        self.sortLabels[sort .. ":" .. tostring(ascending)]
+            or self.sortLabels.added
+    )
+    local search = self.owner.data:GetItemSearch()
+    if not self.searchEdit:HasFocus() and self.searchEdit:GetText() ~= search then
+        self.suppressItemSearch = true
+        self.searchEdit:SetText(search)
+        self.suppressItemSearch = false
+    end
     local capacity = self:GetRowCapacity()
     local items = self:GetVisibleItems()
     local maxOffset = math.max(0, #items - capacity)
