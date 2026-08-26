@@ -4,7 +4,7 @@ local Data = ShoppingListData
 local DEFAULT_LIST_NAME = GetString(SI_SHOPPING_LIST_DEFAULT_LIST_NAME)
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = ShoppingListModel.MAX_NOTE_LENGTH
-local CURRENT_SCHEMA_VERSION = 3
+local CURRENT_SCHEMA_VERSION = 4
 local MAX_RECOVERY_SNAPSHOTS = 5
 local MAX_EXTERNAL_SNAPSHOTS = 10
 local MAX_BACKUP_LISTS = ShoppingListModel.MAX_LISTS
@@ -349,6 +349,7 @@ function Data:Normalize()
                 item.note = normalizeNote(item.note)
                 item.desired = math.max(1, tonumber(item.desired) or 1)
                 item.purchased = math.max(0, tonumber(item.purchased) or 0)
+                item.targetMode = ShoppingListModel:NormalizeTargetMode(item.targetMode)
                 item.match = ShoppingListModel:NormalizeMatchingRule(item.match, true)
                 if languageChanged and item.itemLink and item.itemLink ~= "" then
                     local details = readLinkDetails(item.itemLink)
@@ -419,6 +420,10 @@ local migrations = {
     [2] = function(candidate)
         candidate:Normalize()
         candidate.saved.schemaVersion = 3
+    end,
+    [3] = function(candidate)
+        candidate:Normalize()
+        candidate.saved.schemaVersion = 4
     end,
 }
 
@@ -514,6 +519,7 @@ local function validateItem(item, itemIds)
         or not optionalWholeNumber(item.itemId, 1, MAX_U32)
         or not isWholeNumber(item.desired, 1, MAX_QUANTITY)
         or not isWholeNumber(item.purchased or 0, 0, MAX_QUANTITY)
+        or not ShoppingListModel:IsValidTargetMode(item.targetMode or "buy")
         or not optionalBoolean(item.completed)
         or not optionalWholeNumber(item.totalSpent, 0, MAX_SAFE_INTEGER)
         or not optionalWholeNumber(item.purchaseCount, 0, MAX_SAFE_INTEGER)
@@ -1393,6 +1399,42 @@ function Data:GetShoppingItems()
     return result
 end
 
+function Data:SetInventory(inventory)
+    self.inventory = inventory
+end
+
+function Data:GetTargetMode(item)
+    return ShoppingListModel:NormalizeTargetMode(item and item.targetMode)
+end
+
+function Data:GetOwnedQuantity(item)
+    local counts = self.inventory and self.inventory:GetCounts(item)
+    return math.max(0, tonumber(counts and counts.total) or 0)
+end
+
+function Data:GetRemainingQuantity(item)
+    if not item then
+        return 0
+    end
+    if self:GetTargetMode(item) == "own" then
+        return math.max(0, item.desired - self:GetOwnedQuantity(item))
+    end
+    if item.completed then
+        return 0
+    end
+    return math.max(0, item.desired - item.purchased)
+end
+
+function Data:IsItemComplete(item)
+    return item ~= nil and self:GetRemainingQuantity(item) == 0
+end
+
+function Data:RefreshInventoryCompletion(item)
+    if item and self:GetTargetMode(item) == "own" then
+        item.completed = self:GetOwnedQuantity(item) >= item.desired
+    end
+end
+
 function Data:SelectList(id)
     local list = self:FindList(id)
     if not list then
@@ -1524,6 +1566,7 @@ function Data:ImportList(name, items, note)
         local itemLink = source.itemLink or ""
         local itemNote = source.note or ""
         local maxUnitPrice = source.maxUnitPrice
+        local targetMode = source.targetMode or "buy"
         if itemName == "" or #itemName > ShoppingListModel.MAX_NAME_LENGTH
             or not ShoppingListModel:IsWholeNumber(
                 quantity,
@@ -1533,6 +1576,7 @@ function Data:ImportList(name, items, note)
             or type(itemLink) ~= "string" or type(itemNote) ~= "string"
             or #itemLink > ShoppingListModel.MAX_LINK_LENGTH
             or #itemNote > ShoppingListModel.MAX_NOTE_LENGTH
+            or not ShoppingListModel:IsValidTargetMode(targetMode)
             or not ShoppingListModel:IsValidMatchingRule(source.match)
         then
             return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
@@ -1562,6 +1606,7 @@ function Data:ImportList(name, items, note)
             quantity = quantity,
             itemLink = itemLink,
             note = itemNote,
+            targetMode = targetMode,
             maxUnitPrice = maxUnitPrice,
             match = ShoppingListModel:NormalizeMatchingRule(source.match),
         }
@@ -1638,6 +1683,7 @@ function Data:DuplicateList(id, name, note)
             itemId = item.itemId,
             desired = item.desired,
             purchased = 0,
+            targetMode = ShoppingListModel:NormalizeTargetMode(item.targetMode),
             completed = false,
             purchaseHistory = {},
             purchaseCount = 0,
@@ -1868,9 +1914,9 @@ end
 function Data:ItemPassesFilter(item, filter)
     filter = filter or self:GetItemFilter()
     if filter == "needed" then
-        return not item.completed
+        return not self:IsItemComplete(item)
     elseif filter == "completed" then
-        return item.completed == true
+        return self:IsItemComplete(item)
     elseif filter == "overTarget" then
         return self:ItemIsOverTarget(item)
     elseif filter == "restricted" then
@@ -1890,7 +1936,7 @@ function Data:GetFilteredShoppingItems()
     return result
 end
 
-function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
+function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note, targetMode)
     local list = self:FindList(listId)
     if not list then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
@@ -1913,6 +1959,7 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
     name = zo_strtrim(name or "")
     itemLink = itemLink or ""
     quantity = tonumber(quantity) or 1
+    targetMode = targetMode or "buy"
 
     if name == "" and itemLink and itemLink ~= "" then
         name = GetItemLinkName(itemLink)
@@ -1936,6 +1983,9 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
     ) then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_QUANTITY)
     end
+    if not ShoppingListModel:IsValidTargetMode(targetMode) then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_TARGET_MODE)
+    end
     if itemLink ~= "" then
         local _, _, linkType = ZO_LinkHandler_ParseLink(itemLink)
         if linkType ~= ITEM_LINK_TYPE then
@@ -1954,6 +2004,7 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
         itemId = details.itemId,
         desired = quantity,
         purchased = 0,
+        targetMode = targetMode,
         completed = false,
         purchaseHistory = {},
         purchaseCount = 0,
@@ -2000,6 +2051,9 @@ function Data:AddItemsToList(listId, sources)
         then
             return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_MATCH)
         end
+        if not ShoppingListModel:IsValidTargetMode(source.targetMode or "buy") then
+            return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_TARGET_MODE)
+        end
         if source.maxUnitPrice ~= nil and not ShoppingListModel:IsWholeNumber(
             tonumber(source.maxUnitPrice),
             1,
@@ -2016,7 +2070,8 @@ function Data:AddItemsToList(listId, sources)
             source.quantity,
             source.itemLink,
             nil,
-            source.note
+            source.note,
+            source.targetMode
         )
         if not item then
             while #list.items >= firstIndex do
@@ -2094,6 +2149,11 @@ function Data:UpdateItem(id, values)
     ) then
         return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_QUANTITY)
     end
+    local targetMode = values.targetMode ~= nil and values.targetMode
+        or ShoppingListModel:NormalizeTargetMode(item.targetMode)
+    if not ShoppingListModel:IsValidTargetMode(targetMode) then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_TARGET_MODE)
+    end
     local note = values.note ~= nil and values.note or item.note or ""
     if type(note) ~= "string" or #note > ShoppingListModel.MAX_NOTE_LENGTH then
         return false, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
@@ -2140,11 +2200,16 @@ function Data:UpdateItem(id, values)
     end
 
     item.desired = desired
+    item.targetMode = targetMode
     item.note = note
     item.maxUnitPrice = maxUnitPrice
     item.match = rule
 
-    item.completed = item.purchased >= item.desired
+    if targetMode == "own" then
+        item.completed = self:GetOwnedQuantity(item) >= item.desired
+    else
+        item.completed = item.purchased >= item.desired
+    end
     return true
 end
 
@@ -2205,7 +2270,10 @@ function Data:ToggleItem(id)
     if not item then
         return false
     end
-    if item.completed then
+    if self:GetTargetMode(item) == "own" then
+        return false
+    end
+    if self:IsItemComplete(item) then
         item.completed = false
         if item.purchased >= item.desired then
             item.purchased = math.max(0, item.desired - 1)
@@ -2220,7 +2288,7 @@ function Data:ClearCompleted()
     local items = self:GetItems()
     local removed = {}
     for index = #items, 1, -1 do
-        if items[index].completed then
+        if self:IsItemComplete(items[index]) then
             removed[#removed + 1] = {
                 item = table.remove(items, index),
                 index = index,

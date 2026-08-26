@@ -103,12 +103,12 @@ function Matcher:MatchesItem(entry, itemLink, itemName)
     return self:GetScore(entry, details, true) ~= nil
 end
 
-function Matcher:ApplyPurchase(items, itemLink, itemName, quantity)
+function Matcher:ApplyPurchase(items, itemLink, itemName, quantity, getRemaining)
     local purchase = getPurchaseDetails(itemLink, itemName)
     local matches = {}
 
     for index, entry in ipairs(items) do
-        local score = self:GetScore(entry, purchase)
+        local score = self:GetScore(entry, purchase, true)
         if score then
             matches[#matches + 1] = { entry = entry, score = score, index = index }
         end
@@ -129,12 +129,15 @@ function Matcher:ApplyPurchase(items, itemLink, itemName, quantity)
         end
 
         local entry = match.entry
-        local needed = entry.desired - entry.purchased
+        local needed = getRemaining and getRemaining(entry)
+            or (entry.completed and 0 or entry.desired - entry.purchased)
         local applied = math.min(needed, remaining)
         if applied > 0 then
             local wasComplete = entry.completed
             entry.purchased = entry.purchased + applied
-            entry.completed = entry.purchased >= entry.desired
+            if (entry.targetMode or "buy") == "buy" then
+                entry.completed = entry.purchased >= entry.desired
+            end
             remaining = remaining - applied
             changes[#changes + 1] = {
                 entry = entry,

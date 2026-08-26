@@ -69,13 +69,16 @@ function Gamepad:InitializeKeybinds()
         {
             name = function()
                 local item = self:GetTargetItem()
-                if item and item.completed then
+                if item and self.owner.data:IsItemComplete(item) then
                     return GetString(SI_SHOPPING_LIST_GAMEPAD_MARK_INCOMPLETE)
                 end
                 return GetString(SI_SHOPPING_LIST_GAMEPAD_MARK_COMPLETE)
             end,
             keybind = "UI_SHORTCUT_PRIMARY",
-            enabled = function() return self:GetTargetItem() ~= nil end,
+            enabled = function()
+                local item = self:GetTargetItem()
+                return item ~= nil and self.owner.data:GetTargetMode(item) == "buy"
+            end,
             callback = function()
                 local item = self:GetTargetItem()
                 if item then
@@ -381,28 +384,38 @@ function Gamepad:Refresh(force)
             or tonumber(list.totalSpent) or 0)
     end
     for _, item in ipairs(shoppingItems) do
-        if item.completed then
+        if self.owner.data:IsItemComplete(item) then
             completed = completed + 1
         end
     end
     self.list:Clear()
     for index, item in ipairs(self.owner.data:GetFilteredShoppingItems()) do
+        local isComplete = self.owner.data:IsItemComplete(item)
         local itemName = item.name
         if self.owner.accessibility
             and self.owner.accessibility:UsesNonColorIndicators()
         then
-            itemName = (item.completed and "[x] " or "[ ] ") .. itemName
+            itemName = (isComplete and "[x] " or "[ ] ") .. itemName
         end
         local entry = ZO_GamepadEntryData:New(itemName)
         entry.item = item
         entry:SetFontScaleOnSelection(false)
         entry:SetShowUnselectedSublabels(true)
-        entry:AddSubLabel(zo_strformat(
-            GetString(SI_SHOPPING_LIST_GAMEPAD_ITEM_PROGRESS),
-            item.purchased,
-            item.desired
-        ))
         local owned = self.owner.inventory and self.owner.inventory:GetCounts(item)
+        if self.owner.data:GetTargetMode(item) == "own" then
+            entry:AddSubLabel(zo_strformat(
+                GetString(SI_SHOPPING_LIST_GAMEPAD_ITEM_TARGET_PROGRESS),
+                owned and owned.total or 0,
+                item.desired,
+                self.owner.data:GetRemainingQuantity(item)
+            ))
+        else
+            entry:AddSubLabel(zo_strformat(
+                GetString(SI_SHOPPING_LIST_GAMEPAD_ITEM_PROGRESS),
+                item.purchased,
+                item.desired
+            ))
+        end
         entry:AddSubLabel(zo_strformat(
             GetString(SI_SHOPPING_LIST_GAMEPAD_ITEM_OWNED),
             owned and owned.total or 0,
@@ -437,7 +450,7 @@ function Gamepad:Refresh(force)
                 entry:AddSubLabel(GetString(SI_SHOPPING_LIST_ACCESSIBILITY_OVER_TARGET))
             end
         end
-        if item.completed and not (self.owner.accessibility
+        if isComplete and not (self.owner.accessibility
             and self.owner.accessibility:UsesHighContrast())
         then
             entry:SetNameColors(ZO_DISABLED_TEXT, ZO_DISABLED_TEXT)

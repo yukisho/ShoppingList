@@ -539,7 +539,7 @@ function UI:UpdateListArchiveButtons()
     self.listDialogUndo:SetEnabled(self.owner.data:CanUndoDeletion())
     local completed = 0
     for _, item in ipairs(self.owner.data:GetItems()) do
-        if item.completed then
+        if self.owner.data:IsItemComplete(item) then
             completed = completed + 1
         end
     end
@@ -925,13 +925,23 @@ function UI:CreateRow(index)
 
     row.progress = makeLabel(row, "ZoFontGameSmall")
     row.progress:SetHorizontalAlignment(TEXT_ALIGN_RIGHT)
-    row.progress:SetAnchor(RIGHT, row.edit, LEFT, -3, 0)
-    row.progress:SetDimensions(70, 30)
+    row.progress:SetAnchor(BOTTOMLEFT, row.toggle, BOTTOMRIGHT, 5, 0)
+    row.progress:SetAnchor(BOTTOMRIGHT, row.edit, BOTTOMLEFT, -3, 0)
+    row.progress:SetHeight(14)
+    row.progress:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
+    row.progress:SetMouseEnabled(true)
+    row.progress:SetHandler("OnMouseEnter", function(control)
+        InitializeTooltip(InformationTooltip, control, BOTTOM, 0, -4, TOP)
+        SetTooltipText(InformationTooltip, control:GetText())
+    end)
+    row.progress:SetHandler("OnMouseExit", function()
+        ClearTooltip(InformationTooltip)
+    end)
 
     row.name = makeLabel(row, "ZoFontGame")
-    row.name:SetAnchor(LEFT, row.toggle, RIGHT, 5, 0)
-    row.name:SetAnchor(RIGHT, row.progress, LEFT, -3, 0)
-    row.name:SetHeight(30)
+    row.name:SetAnchor(TOPLEFT, row.toggle, TOPRIGHT, 5, 0)
+    row.name:SetAnchor(TOPRIGHT, row.edit, TOPLEFT, -3, 0)
+    row.name:SetHeight(18)
     row.name:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     row.name:SetMouseEnabled(true)
 
@@ -1147,7 +1157,7 @@ function UI:RefreshSummary(completed, total)
         completed = 0
         local spent = 0
         for _, item in ipairs(items) do
-            if item.completed then
+            if self.owner.data:IsItemComplete(item) then
                 completed = completed + 1
             end
         end
@@ -1168,7 +1178,7 @@ function UI:RefreshSummary(completed, total)
         completed = 0
         total = #list.items
         for _, item in ipairs(list.items) do
-            if item.completed then
+            if self.owner.data:IsItemComplete(item) then
                 completed = completed + 1
             end
         end
@@ -1223,7 +1233,7 @@ function UI:Refresh()
 
     local completed = 0
     for _, item in ipairs(self.owner.data:GetShoppingItems()) do
-        if item.completed then
+        if self.owner.data:IsItemComplete(item) then
             completed = completed + 1
         end
     end
@@ -1236,7 +1246,10 @@ function UI:Refresh()
         row:SetHidden(item == nil)
         if item then
             local itemId = item.id
-            row.toggle:SetText(item.completed and "[x]" or "[ ]")
+            local isComplete = self.owner.data:IsItemComplete(item)
+            local targetMode = self.owner.data:GetTargetMode(item)
+            row.toggle:SetText(isComplete and "[x]" or "[ ]")
+            row.toggle:SetEnabled(targetMode == "buy")
             local sourceList = self.owner.data:GetListForItem(item.id)
             if self.owner.data:IsMultiListTripEnabled() and sourceList then
                 local itemName = zo_strformat(
@@ -1255,15 +1268,25 @@ function UI:Refresh()
                 ) or item.name)
             end
             local owned = self.owner.inventory and self.owner.inventory:GetCounts(item)
-            local progress = zo_strformat(
-                GetString(SI_SHOPPING_LIST_INVENTORY_PROGRESS),
-                item.purchased,
-                item.desired,
-                owned and owned.total or 0
-            )
+            local progress
+            if targetMode == "own" then
+                progress = zo_strformat(
+                    GetString(SI_SHOPPING_LIST_INVENTORY_TARGET_PROGRESS),
+                    owned and owned.total or 0,
+                    item.desired,
+                    self.owner.data:GetRemainingQuantity(item)
+                )
+            else
+                progress = zo_strformat(
+                    GetString(SI_SHOPPING_LIST_INVENTORY_PROGRESS),
+                    item.purchased,
+                    item.desired,
+                    owned and owned.total or 0
+                )
+            end
             local isOverTarget = self.owner.data:ItemIsOverTarget(item)
             if item.maxUnitPrice then
-                progress = progress .. "\n≤ " .. formatCompactGold(item.maxUnitPrice)
+                progress = progress .. " · ≤ " .. formatCompactGold(item.maxUnitPrice)
                 if isOverTarget
                     and self.owner.accessibility
                     and self.owner.accessibility:UsesNonColorIndicators()
@@ -1279,9 +1302,7 @@ function UI:Refresh()
             else
                 row.edit:SetAnchor(RIGHT, row.remove, LEFT, -4, 0)
             end
-            row.progress:ClearAnchors()
-            row.progress:SetAnchor(RIGHT, row.edit, LEFT, -3, 0)
-            if item.completed then
+            if isComplete then
                 local dim = self.owner.accessibility
                     and self.owner.accessibility:UsesHighContrast()
                     and 0.72 or 0.5
@@ -1291,7 +1312,7 @@ function UI:Refresh()
             end
             if isOverTarget then
                 row.progress:SetColor(1, 0.4, 0.3, 1)
-            elseif item.completed then
+            elseif isComplete then
                 local dim = self.owner.accessibility
                     and self.owner.accessibility:UsesHighContrast()
                     and 0.72 or 0.5

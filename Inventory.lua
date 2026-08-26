@@ -151,6 +151,13 @@ function Inventory:Refresh()
     end
 
     self.counts = counts
+    if self.owner.data.RefreshInventoryCompletion then
+        for _, list in ipairs(self.owner.data:GetLists()) do
+            for _, item in ipairs(list.items) do
+                self.owner.data:RefreshInventoryCompletion(item)
+            end
+        end
+    end
     if self.owner.ui then
         self.owner.ui:Refresh()
     end

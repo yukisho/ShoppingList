@@ -20,6 +20,10 @@ ShoppingListModel = {
         any = true,
         exact = true,
     },
+    TARGET_MODES = {
+        buy = true,
+        own = true,
+    },
 }
 
 local Model = ShoppingListModel
@@ -51,6 +55,14 @@ end
 
 function Model:IsValidQuality(value)
     return self:IsWholeNumber(value) and validQualities[value] == true
+end
+
+function Model:IsValidTargetMode(value)
+    return type(value) == "string" and self.TARGET_MODES[value] == true
+end
+
+function Model:NormalizeTargetMode(value)
+    return self:IsValidTargetMode(value) and value or "buy"
 end
 
 function Model:IsValidTraitType(value)

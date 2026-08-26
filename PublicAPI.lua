@@ -220,6 +220,10 @@ local function prepareItem(source)
     if not quantity then
         return nil, ERROR.INVALID_QUANTITY
     end
+    local targetMode = source.targetMode or "buy"
+    if not ShoppingListModel:IsValidTargetMode(targetMode) then
+        return nil, ERROR.INVALID_OPTIONS
+    end
 
     local match, matchError = prepareMatch(source.match, itemLink)
     if matchError then
@@ -230,6 +234,7 @@ local function prepareItem(source)
         name = name,
         itemLink = itemLink,
         quantity = quantity,
+        targetMode = targetMode,
         note = source.note,
         match = match,
     }
@@ -326,6 +331,7 @@ function API:AddItem(itemLinkOrName, quantity, options)
     local prepared, itemError = prepareItem({
         item = itemLinkOrName,
         quantity = quantity,
+        targetMode = options.targetMode,
         note = options.note,
         match = options.match,
     })

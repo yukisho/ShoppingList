@@ -103,6 +103,9 @@ Each CreateList or AddItems entry accepts:
   item link or a non-empty plain item name. itemLink must be an item link, and
   name is intended for name-only entries.
 - quantity: Optional whole number from 1 through 1,000,000. Defaults to 1.
+- targetMode: Optional "buy" or "own". "buy" tracks how many more should be
+  purchased and is the default. "own" treats quantity as the total number the
+  player wants across backpack, bank, subscriber bank, and craft bag.
 - note: Optional item note.
 - match: Optional matching-rule overrides described below.
 
@@ -145,7 +148,7 @@ Add one item
     )
 
 AddItem remains compatible with API version 1. Its options table accepts
-listId, listName, note, silent, and the API version 2 match table.
+listId, listName, note, targetMode, silent, and the API version 2 match table.
 
     local success, result = api:AddItem(itemLink, 1, {
         listName = "Stamina Warden - Base Light",
@@ -178,16 +181,16 @@ Shopping List data.
 Fallback sharing without Shopping List
 --------------------------------------
 
-A companion add-on can show an SL2 code when Shopping List is not installed.
-SL2 preserves the list note plus each item's link, note, desired quantity,
-matching rules, and maximum unit price. Shopping List 0.17.0 can import that
-code after it is installed and the UI is reloaded.
+A companion add-on can show an SL3 code when Shopping List is not installed.
+SL3 preserves the list note plus each item's link, note, desired quantity,
+quantity target mode, matching rules, and maximum unit price. Shopping List
+0.18.5 can import that code after it is installed and the UI is reloaded.
 
 The complete language-neutral binary contract is included in ShareFormat.txt.
 Companion add-ons should implement that contract directly rather than copying
-Shopping List internal functions. SL1 remains importable, but new integrations
-should generate SL2. SLB1 is a full-account backup format and must not be used
-for companion exports.
+Shopping List internal functions. SL1 and SL2 remain importable, but new
+integrations should generate SL3. SLB1 is a full-account backup format and
+must not be used for companion exports.
 
 Error codes
 -----------

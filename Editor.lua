@@ -2,7 +2,7 @@ ShoppingListEditor = {}
 
 local Editor = ShoppingListEditor
 local WINDOW_WIDTH = 460
-local WINDOW_HEIGHT = 690
+local WINDOW_HEIGHT = 730
 
 local function makeLabel(parent, text, x, y, width)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
@@ -215,51 +215,55 @@ function Editor:Initialize()
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_QUANTITY), 18, 82)
     self.quantity = makeEdit(window, 146, 82, 90, true, #tostring(ShoppingListModel.MAX_QUANTITY))
 
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_SET), 18, 122)
-    self.setName = makeEdit(window, 146, 122, 280, false, ShoppingListModel.MAX_NAME_LENGTH)
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_TARGET_MODE), 18, 122)
+    self.targetMode = makeCombo(window, "TargetMode", 146, 122, 280)
+
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_SET), 18, 162)
+    self.setName = makeEdit(window, 146, 162, 280, false, ShoppingListModel.MAX_NAME_LENGTH)
     self.setName:SetDefaultText(GetString(SI_SHOPPING_LIST_EDITOR_ANY_SET))
 
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_TRAIT), 18, 162)
-    self.trait = makeCombo(window, "Trait", 146, 162, 280)
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_TRAIT), 18, 202)
+    self.trait = makeCombo(window, "Trait", 146, 202, 280)
 
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_QUALITY_RULE), 18, 202)
-    self.qualityMode = makeCombo(window, "QualityMode", 146, 202, 135)
-    self.quality = makeCombo(window, "Quality", 291, 202, 135)
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_QUALITY_RULE), 18, 242)
+    self.qualityMode = makeCombo(window, "QualityMode", 146, 242, 135)
+    self.quality = makeCombo(window, "Quality", 291, 242, 135)
 
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_LEVEL_RULE), 18, 242)
-    self.levelMode = makeCombo(window, "LevelMode", 146, 242, 135)
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_LEVEL_RULE), 18, 282)
+    self.levelMode = makeCombo(window, "LevelMode", 146, 282, 135)
 
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_LEVEL), 18, 282)
-    self.level = makeEdit(window, 146, 282, 90, true, #tostring(ShoppingListModel.MAX_LEVEL))
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_CHAMPION_POINTS), 250, 282, 125)
-    self.championPoints = makeEdit(window, 376, 282, 50, true, #tostring(ShoppingListModel.MAX_CHAMPION_POINTS))
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_LEVEL), 18, 322)
+    self.level = makeEdit(window, 146, 322, 90, true, #tostring(ShoppingListModel.MAX_LEVEL))
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_CHAMPION_POINTS), 250, 322, 125)
+    self.championPoints = makeEdit(window, 376, 322, 50, true, #tostring(ShoppingListModel.MAX_CHAMPION_POINTS))
 
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_MAX_UNIT_PRICE), 18, 326, 150)
-    self.maxUnitPrice = makeEdit(window, 174, 326, 120, true, #tostring(ShoppingListModel.MAX_PRICE))
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_GOLD_NONE), 302, 326, 140)
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_MAX_UNIT_PRICE), 18, 366, 150)
+    self.maxUnitPrice = makeEdit(window, 174, 366, 120, true, #tostring(ShoppingListModel.MAX_PRICE))
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_GOLD_NONE), 302, 366, 140)
 
-    self.purchaseSummary = makeLabel(window, "", 18, 366, WINDOW_WIDTH - 36)
+    self.purchaseSummary = makeLabel(window, "", 18, 406, WINDOW_WIDTH - 36)
     ShoppingListAccessibility:SetFont(self.purchaseSummary, "ZoFontGameSmall")
     self.purchaseSummary:SetColor(0.75, 0.82, 0.65, 1)
     self.purchaseSummary:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
     self.purchaseSummary:SetHeight(44)
 
-    self.ownedSummary = makeLabel(window, "", 18, 408, WINDOW_WIDTH - 36)
+    self.ownedSummary = makeLabel(window, "", 18, 448, WINDOW_WIDTH - 36)
     ShoppingListAccessibility:SetFont(self.ownedSummary, "ZoFontGameSmall")
     self.ownedSummary:SetColor(0.75, 0.82, 0.9, 1)
 
-    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_NOTE), 18, 442, 120)
-    self.note = makeNoteEdit(window, 18, 472, WINDOW_WIDTH - 36, 100)
+    makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_NOTE), 18, 482, 120)
+    self.note = makeNoteEdit(window, 18, 512, WINDOW_WIDTH - 36, 100)
 
     local hint = makeLabel(
         window,
         GetString(SI_SHOPPING_LIST_EDITOR_HINT),
         18,
-        586,
+        616,
         WINDOW_WIDTH - 36
     )
     ShoppingListAccessibility:SetFont(hint, "ZoFontGameSmall")
     hint:SetColor(0.65, 0.65, 0.65, 1)
+    hint:SetHeight(60)
 
     self.historyButton = makeButton(window, GetString(SI_SHOPPING_LIST_BUTTON_HISTORY), 18, 80)
     self.historyButton:SetHandler("OnClicked", function()
@@ -286,6 +290,10 @@ function Editor:Initialize()
         { label = GetString(SI_SHOPPING_LIST_CHOICE_ANY), value = "any" },
         { label = GetString(SI_SHOPPING_LIST_CHOICE_EXACTLY), value = "exact" },
     }, "any")
+    setChoices(self.targetMode, {
+        { label = GetString(SI_SHOPPING_LIST_TARGET_BUY), value = "buy" },
+        { label = GetString(SI_SHOPPING_LIST_TARGET_OWN), value = "own" },
+    }, "buy")
     setChoices(self.quality, qualityChoices, ITEM_QUALITY_NORMAL)
     self.traitChoices = getTraitChoices()
 end
@@ -299,6 +307,10 @@ function Editor:Open(item)
     local rule = item.match or {}
     self.itemName:SetText(item.itemLink ~= "" and item.itemLink or item.name)
     self.quantity:SetText(tostring(item.desired))
+    setChoices(self.targetMode, {
+        { label = GetString(SI_SHOPPING_LIST_TARGET_BUY), value = "buy" },
+        { label = GetString(SI_SHOPPING_LIST_TARGET_OWN), value = "own" },
+    }, ShoppingListModel:NormalizeTargetMode(item.targetMode))
     self.setName:SetText(rule.setName or "")
     self.level:SetText(tostring(rule.level or 1))
     self.championPoints:SetText(tostring(rule.championPoints or 0))
@@ -401,6 +413,7 @@ function Editor:Save()
 
     local ok, message = self.owner.data:UpdateItem(self.item.id, {
         desired = self.quantity:GetText(),
+        targetMode = self.targetMode.selectedValue,
         maxUnitPrice = self.maxUnitPrice:GetText(),
         setName = self.setName:GetText(),
         traitType = self.trait.selectedValue,

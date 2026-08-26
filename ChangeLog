@@ -1,4 +1,9 @@
 0.18.5
+• Changed keyboard item rows to place quantity and inventory progress beneath the item name so Own Total counts are no longer clipped by the Edit button.
+• Added per-item Buy More and Own Total quantity targets in the keyboard and gamepad editors.
+• Own Total entries now calculate remaining quantity and completion from matching backpack, bank, subscriber bank, and craft bag inventory without recording owned items as purchases.
+• Added a schema version 4 safety migration that preserves existing entries as Buy More, plus strict backup and public API validation for quantity target modes.
+• Added SL3 lightweight sharing for quantity target modes while retaining SL1 and SL2 imports as Buy More entries.
 • Corrected transactional migration and restore code treating ESO's SavedVars interface as ordinary list data, which caused newly added items to disappear after reloads.
 • Changed legacy recovery to snapshot the former raw account data without creating a second live SavedVars interface for the same ShoppingList_Data global.
 • Added a separate SavedVariables recovery store that captures the complete primary data before every startup migration or normalization.
@@ -14,7 +19,7 @@
 • Made linked item matching and inventory counts prefer stable item and set IDs, and refresh cached localized names when ESO's language changes.
 • Changed keyboard accessibility scaling to resize text and window geometry together; gamepad continues to use ESO's native accessibility scaling.
 • Added a tracked npm test suite for source parsing, manifest order, localization parity, migrations, data safety, matching, accounting, inventory, AGS, sharing, backups, and public API compatibility.
-• Upgraded saved data to schema version 3 with detached, transactional migrations that commit only after the complete candidate is valid.
+• Upgraded saved data to schema version 4 with detached, transactional migrations that commit only after the complete candidate is valid.
 • Added checksummed automatic safety copies before migrations, imports, full restores, and legacy data recovery, retaining the five newest copies.
 • Added keyboard and gamepad controls for restoring automatic safety copies.
 • Added an optional ShoppingList compatibility loader that safely merges data stranded by the former manifest name without replacing current lists or importing twice.

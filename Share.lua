@@ -3,8 +3,10 @@ ShoppingListShare = {}
 local Share = ShoppingListShare
 local PREFIX_V1 = "SL1:"
 local PREFIX_V2 = "SL2:"
+local PREFIX_V3 = "SL3:"
 local FORMAT_VERSION_V1 = 1
 local FORMAT_VERSION_V2 = 2
+local FORMAT_VERSION_V3 = 3
 local MAX_ITEMS = ShoppingListModel.MAX_ITEMS_PER_LIST
 local MAX_NAME_BYTES = ShoppingListModel.MAX_NAME_LENGTH
 local MAX_NOTE_BYTES = ShoppingListModel.MAX_NOTE_LENGTH
@@ -33,9 +35,17 @@ local LEVEL_MODE_NAME = {
     [0] = "any",
     [1] = "exact",
 }
+local TARGET_MODE_VALUE = {
+    buy = 0,
+    own = 1,
+}
+local TARGET_MODE_NAME = {
+    [0] = "buy",
+    [1] = "own",
+}
 
 Share.MAX_CODE_LENGTH = MAX_CODE_LENGTH
-Share.PREFIX = PREFIX_V2
+Share.PREFIX = PREFIX_V3
 
 for index = 1, #ALPHABET do
     DECODE[string.sub(ALPHABET, index, index)] = index - 1
@@ -279,7 +289,7 @@ function Share.EncodeList(list)
         return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_TOO_MANY_ITEMS)
     end
 
-    local parts = { string.char(FORMAT_VERSION_V2) }
+    local parts = { string.char(FORMAT_VERSION_V3) }
     appendString(parts, listName)
     appendString(parts, listNote)
     appendU16(parts, #list.items)
@@ -307,6 +317,7 @@ function Share.EncodeList(list)
         local championPoints = encodeOptionalU32(match.championPoints)
         local maxUnitPrice = item.maxUnitPrice == nil and 0
             or wholeNumber(item.maxUnitPrice, 1, MAX_U32)
+        local targetMode = TARGET_MODE_VALUE[item.targetMode or "buy"]
 
         if itemName == "" or #itemName > MAX_NAME_BYTES then
             return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_ITEM_NAME_LONG)
@@ -331,6 +342,7 @@ function Share.EncodeList(list)
         if setId == nil or traitType == nil or qualityMode == nil
             or quality == nil or levelMode == nil or level == nil
             or championPoints == nil or maxUnitPrice == nil
+            or targetMode == nil
         then
             return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_ITEM_DATA)
         end
@@ -348,19 +360,20 @@ function Share.EncodeList(list)
         appendU16(parts, level)
         appendU32(parts, championPoints)
         appendU32(parts, maxUnitPrice)
+        parts[#parts + 1] = string.char(targetMode)
     end
 
     local body = table.concat(parts)
     local payload = { body }
     appendU32(payload, checksum(body))
-    local code = PREFIX_V2 .. encodeBase64(table.concat(payload))
+    local code = PREFIX_V3 .. encodeBase64(table.concat(payload))
     if #code > MAX_CODE_LENGTH then
         return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_LIST_LONG)
     end
     return code
 end
 
-local function decodeV2(payload)
+local function decodeModern(payload, expectedVersion, includesTargetMode)
     if #payload < 5 then
         return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_INVALID)
     end
@@ -372,7 +385,7 @@ local function decodeV2(payload)
     end
 
     local reader = makeReader(body)
-    if reader:Byte() ~= FORMAT_VERSION_V2 then
+    if reader:Byte() ~= expectedVersion then
         return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_VERSION)
     end
 
@@ -400,12 +413,17 @@ local function decodeV2(payload)
         local level = decodeOptional(reader:U16())
         local championPoints = decodeOptional(reader:U32())
         local maxUnitPrice = reader:U32()
+        local targetMode = "buy"
+        if includesTargetMode then
+            targetMode = TARGET_MODE_NAME[reader:Byte()]
+        end
 
         if not itemName or trim(itemName) == ""
             or not quantity or quantity < 1 or quantity > ShoppingListModel.MAX_QUANTITY
             or itemLink == nil or itemNote == nil or setName == nil
             or setId == nil or not qualityMode or not levelMode
             or maxUnitPrice == nil
+            or targetMode == nil
             or (qualityMode ~= "any" and quality == nil)
             or (levelMode == "exact" and (level == nil or championPoints == nil))
         then
@@ -446,6 +464,7 @@ local function decodeV2(payload)
             itemLink = itemLink,
             note = itemNote,
             maxUnitPrice = maxUnitPrice ~= 0 and maxUnitPrice or nil,
+            targetMode = targetMode,
             match = match,
         }
     end
@@ -457,8 +476,16 @@ local function decodeV2(payload)
         name = listName,
         note = listNote,
         items = items,
-        formatVersion = 2,
+        formatVersion = expectedVersion,
     }
+end
+
+local function decodeV2(payload)
+    return decodeModern(payload, FORMAT_VERSION_V2, false)
+end
+
+local function decodeV3(payload)
+    return decodeModern(payload, FORMAT_VERSION_V3, true)
 end
 
 function Share.DecodeCode(code)
@@ -469,7 +496,10 @@ function Share.DecodeCode(code)
 
     local prefix
     local decoder
-    if string.sub(code, 1, #PREFIX_V2) == PREFIX_V2 then
+    if string.sub(code, 1, #PREFIX_V3) == PREFIX_V3 then
+        prefix = PREFIX_V3
+        decoder = decodeV3
+    elseif string.sub(code, 1, #PREFIX_V2) == PREFIX_V2 then
         prefix = PREFIX_V2
         decoder = decodeV2
     elseif string.sub(code, 1, #PREFIX_V1) == PREFIX_V1 then
@@ -478,7 +508,7 @@ function Share.DecodeCode(code)
     else
         return nil, zo_strformat(
             GetString(SI_SHOPPING_LIST_SHARE_ERROR_PREFIX),
-            PREFIX_V1 .. " or " .. PREFIX_V2
+            PREFIX_V1 .. ", " .. PREFIX_V2 .. ", or " .. PREFIX_V3
         )
     end
 

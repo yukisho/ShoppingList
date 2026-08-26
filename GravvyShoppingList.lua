@@ -52,6 +52,7 @@ function addon:Initialize()
     self.gamepad = ShoppingListGamepad:New(self)
     self.gamepad:Initialize()
     self.inventory = ShoppingListInventory:New(self)
+    self.data:SetInventory(self.inventory)
     self.inventory:Initialize()
     self.history = ShoppingListHistory:New(self)
     self.history:Initialize()
@@ -289,7 +290,8 @@ function addon:RecordPurchase(itemLink, itemName, quantity, purchase)
         self.data:GetShoppingItems(),
         itemLink,
         itemName,
-        quantity
+        quantity,
+        function(entry) return self.data:GetRemainingQuantity(entry) end
     )
     if #changes == 0 then
         return
@@ -313,6 +315,7 @@ function addon:RecordPurchase(itemLink, itemName, quantity, purchase)
     end
     self.ui:Refresh()
     self.gamepad:Refresh()
+    self:RefreshInventory()
     if self.data:GetSettings().announcePurchases then
         for _, change in ipairs(changes) do
             local entry = change.entry

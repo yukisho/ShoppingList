@@ -1,7 +1,8 @@
 local releaseNotes = {
     en = [[
 
-Current release · 0.18.0
+Current release · 0.18.5
+• Added Buy More and Own Total quantity targets with inventory-driven remaining counts.
 • Added tradeable set-piece autocomplete backed by LibSets.
 • Added schema-versioned migrations and five automatic safety copies before risky data changes.
 • Added keyboard and gamepad restoration of automatic safety copies.
@@ -17,7 +18,8 @@ Current release · 0.18.0
 • Added inventory-aware quantities, notes, full SLB1 backup, accessibility settings, chat-link actions, and Spanish and French translations.]],
     es = [[
 
-Versión actual · 0.18.0
+Versión actual · 0.18.5
+• Se añadieron objetivos Comprar más y Total propio con cantidades pendientes según el inventario.
 • Se añadió el autocompletado de piezas de conjunto comerciables mediante LibSets.
 • Se añadieron migraciones con versión de esquema y cinco copias automáticas antes de cambios de datos arriesgados.
 • Se añadió la restauración de copias automáticas para teclado y mando.
@@ -33,7 +35,8 @@ Versión actual · 0.18.0
 • Se añadieron cantidades de inventario, notas, copia completa SLB1, accesibilidad, acciones de enlaces del chat y traducciones al español y francés.]],
     fr = [[
 
-Version actuelle · 0.18.0
+Version actuelle · 0.18.5
+• Ajout des objectifs Acheter plus et Total possédé avec le calcul restant selon l'inventaire.
 • Ajout de la saisie semi-automatique des pièces d'ensemble échangeables grâce à LibSets.
 • Ajout de migrations versionnées et de cinq copies automatiques avant les modifications de données risquées.
 • Ajout de la restauration des copies automatiques au clavier et à la manette.

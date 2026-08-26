@@ -589,6 +589,10 @@ function Gamepad:InitializeEditDialog()
         { label = GetString(SI_SHOPPING_LIST_CHOICE_ANY), value = "any" },
         { label = GetString(SI_SHOPPING_LIST_CHOICE_EXACTLY), value = "exact" },
     }
+    local targetModes = {
+        { label = GetString(SI_SHOPPING_LIST_TARGET_BUY), value = "buy" },
+        { label = GetString(SI_SHOPPING_LIST_TARGET_OWN), value = "own" },
+    }
 
     ZO_Dialogs_RegisterCustomDialog(EDIT_DIALOG, {
         blockDialogReleaseOnPress = true,
@@ -607,6 +611,7 @@ function Gamepad:InitializeEditDialog()
             self.editingItemId = item.id
             self.pendingEdit = {
                 desired = tostring(item.desired),
+                targetMode = ShoppingListModel:NormalizeTargetMode(item.targetMode),
                 setName = rule.setName or "",
                 traitType = rule.traitType or ITEM_TRAIT_TYPE_NONE,
                 qualityMode = rule.qualityMode or "any",
@@ -636,6 +641,12 @@ function Gamepad:InitializeEditDialog()
                 maxChars = #tostring(ShoppingListModel.MAX_QUANTITY),
                 numeric = true,
             }),
+            dropdownEntry(
+                SI_SHOPPING_LIST_EDITOR_TARGET_MODE,
+                targetModes,
+                function() return self.pendingEdit.targetMode end,
+                function(value) self.pendingEdit.targetMode = value end
+            ),
             textFieldEntry(SI_SHOPPING_LIST_EDITOR_SET, {
                 value = function() return self.pendingEdit.setName end,
                 changed = function(value) self.pendingEdit.setName = value end,
