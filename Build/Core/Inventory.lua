@@ -129,6 +129,7 @@ end
 function Inventory:Refresh()
     local inventoryByName, inventoryByItemId = self:ReadItems()
     local counts = {}
+    local changedItemIds = {}
 
     for _, list in ipairs(self.owner.data:GetLists()) do
         for _, item in ipairs(list.items) do
@@ -147,6 +148,17 @@ function Inventory:Refresh()
                 end
             end
             counts[item.id] = owned
+            local previous = self.counts and self.counts[item.id]
+            local changed = not previous and owned.total > 0
+            if previous then
+                changed = previous.backpack ~= owned.backpack
+                    or previous.bank ~= owned.bank
+                    or previous.craftBag ~= owned.craftBag
+                    or previous.total ~= owned.total
+            end
+            if changed then
+                changedItemIds[#changedItemIds + 1] = item.id
+            end
         end
     end
 
@@ -157,6 +169,12 @@ function Inventory:Refresh()
                 self.owner.data:RefreshInventoryCompletion(item)
             end
         end
+    end
+    if #changedItemIds > 0 and self.owner.data.NotifyUpdate then
+        self.owner.data:NotifyUpdate("item", {
+            action = "inventoryChanged",
+            itemIds = changedItemIds,
+        })
     end
     if self.owner.ui then
         self.owner.ui:Refresh()

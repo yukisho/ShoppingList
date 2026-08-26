@@ -1,6 +1,14 @@
+0.18.8
+• Added a shopping session summary for matched purchases, actual spending, updated lists, and live remaining entry counts.
+• Expanded the public API to manage, inspect, select, reorder, archive, restore, duplicate, delete, and reset shopping lists.
+• Added live remaining quantity snapshots and non-mutating matching previews that use purchase allocation order.
+• Added protected list, item, and purchase update callbacks for companion addons while retaining API v1 and v2 compatibility.
+• Added atomic crafting material transfers for companion addons, defaulting to merged Own Total targets so live inventory determines what remains.
+• Added optional WritWorthy integration to send a Master Writ's required materials to the current list from its right click menu.
+
 0.18.7
-• Reorganized runtime code into Core, Features, Integrations, and shared, keyboard, and gamepad UI modules without changing saved-variable identities.
-• Added per-list item searching plus sorting by name, quantity, owned quantity, completion, price target, and date added in keyboard and gamepad interfaces.
+• Reorganized runtime code into Core, Features, Integrations, and shared, keyboard, and gamepad UI modules without changing saved variable identities.
+• Added per list item searching plus sorting by name, quantity, owned quantity, completion, price target, and date added in keyboard and gamepad interfaces.
 • Added persistent favorite and pinned lists plus optional list categories; pinned lists appear first while preserving manual list order.
 
 0.18.5

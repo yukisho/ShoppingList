@@ -81,6 +81,16 @@ local defaults = {
 Data.MAX_NOTE_LENGTH = MAX_NOTE_LENGTH
 Data.CURRENT_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
 
+function Data:SetUpdateListener(listener)
+    self.updateListener = type(listener) == "function" and listener or nil
+end
+
+function Data:NotifyUpdate(kind, details)
+    if self.updateListener then
+        self.updateListener(kind, details or {})
+    end
+end
+
 local function normalizeName(name)
     name = zo_strtrim(name or "")
     return zo_strlower(zo_strformat(SI_TOOLTIP_ITEM_NAME, name))
@@ -1516,6 +1526,10 @@ function Data:SelectList(id)
         return false
     end
     self.saved.selectedListId = list.id
+    self:NotifyUpdate("list", {
+        action = "selected",
+        listId = list.id,
+    })
     return true
 end
 
@@ -1531,6 +1545,12 @@ function Data:MoveList(id, direction)
     end
     self.saved.lists[index], self.saved.lists[target] =
         self.saved.lists[target], self.saved.lists[index]
+    self:NotifyUpdate("list", {
+        action = "moved",
+        listId = id,
+        fromIndex = index,
+        toIndex = target,
+    })
     return true
 end
 
@@ -1572,7 +1592,7 @@ function Data:GetStoredListCount()
     return count
 end
 
-function Data:AddList(name, note, category)
+function Data:AddList(name, note, category, suppressUpdate)
     name = zo_strtrim(name or "")
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_ENTER_LIST_NAME)
@@ -1619,6 +1639,12 @@ function Data:AddList(name, note, category)
     self.saved.nextListId = self.saved.nextListId + 1
     self.saved.lists[#self.saved.lists + 1] = list
     self.saved.selectedListId = list.id
+    if not suppressUpdate then
+        self:NotifyUpdate("list", {
+            action = "created",
+            listId = list.id,
+        })
+    end
     return list
 end
 
@@ -1718,10 +1744,17 @@ function Data:ImportList(name, items, note, recurring)
         return nil, createdOrMessage
     end
     list.recurring = recurring == true
+    if list.recurring then
+        self:NotifyUpdate("list", {
+            action = "updated",
+            listId = list.id,
+            field = "recurring",
+        })
+    end
     return list
 end
 
-function Data:DuplicateList(id, name, note, category)
+function Data:DuplicateList(id, name, note, category, selectList)
     local source = self:FindList(id)
     if not source then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
@@ -1803,7 +1836,14 @@ function Data:DuplicateList(id, name, note, category)
     end
 
     self.saved.lists[#self.saved.lists + 1] = copy
-    self.saved.selectedListId = copy.id
+    if selectList ~= false then
+        self.saved.selectedListId = copy.id
+    end
+    self:NotifyUpdate("list", {
+        action = "duplicated",
+        listId = copy.id,
+        sourceListId = source.id,
+    })
     return copy
 end
 
@@ -1824,6 +1864,11 @@ function Data:RenameList(id, name)
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_NAME_EXISTS)
     end
     list.name = name
+    self:NotifyUpdate("list", {
+        action = "updated",
+        listId = list.id,
+        field = "name",
+    })
     return true
 end
 
@@ -1836,6 +1881,11 @@ function Data:UpdateListNote(id, note)
         return false, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
     end
     list.note = note
+    self:NotifyUpdate("list", {
+        action = "updated",
+        listId = list.id,
+        field = "note",
+    })
     return true
 end
 
@@ -1850,6 +1900,11 @@ function Data:UpdateListCategory(id, category)
         return false, GetString(SI_SHOPPING_LIST_ERROR_CATEGORY_TOO_LONG)
     end
     list.category = normalizeCategory(category)
+    self:NotifyUpdate("list", {
+        action = "updated",
+        listId = list.id,
+        field = "category",
+    })
     return true
 end
 
@@ -1862,6 +1917,11 @@ function Data:SetListFavorite(id, favorite)
         return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LIST_ORGANIZATION)
     end
     list.favorite = favorite
+    self:NotifyUpdate("list", {
+        action = "updated",
+        listId = list.id,
+        field = "favorite",
+    })
     return true
 end
 
@@ -1874,6 +1934,11 @@ function Data:SetListPinned(id, pinned)
         return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LIST_ORGANIZATION)
     end
     list.pinned = pinned
+    self:NotifyUpdate("list", {
+        action = "updated",
+        listId = list.id,
+        field = "pinned",
+    })
     return true
 end
 
@@ -1893,6 +1958,11 @@ function Data:UpdateListBudget(id, value)
     end
     budget = budget or 0
     list.budget = budget > 0 and budget or nil
+    self:NotifyUpdate("list", {
+        action = "updated",
+        listId = list.id,
+        field = "budget",
+    })
     return true
 end
 
@@ -1905,6 +1975,11 @@ function Data:SetListRecurring(id, recurring)
         return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_RECURRING)
     end
     list.recurring = recurring
+    self:NotifyUpdate("list", {
+        action = "updated",
+        listId = list.id,
+        field = "recurring",
+    })
     return true, list
 end
 
@@ -1955,6 +2030,11 @@ function Data:ResetListProgress(id)
     end
     list.resetCount = math.max(0, tonumber(list.resetCount) or 0) + 1
     list.lastResetAt = GetTimeStamp()
+    self:NotifyUpdate("list", {
+        action = "progressReset",
+        listId = list.id,
+        itemCount = resetItems,
+    })
     return true, resetItems, list
 end
 
@@ -1989,6 +2069,12 @@ function Data:DeleteList(id)
     local selected = self.saved.lists[math.min(index, #self.saved.lists)]
     self.saved.selectedListId = selected.id
     self:EnsureActiveTripList()
+    self:NotifyUpdate("list", {
+        action = "deleted",
+        listId = list.id,
+        name = list.name,
+        selectedListId = selected.id,
+    })
     return true, selected
 end
 
@@ -2019,6 +2105,12 @@ function Data:ArchiveList(id)
     local selected = self.saved.lists[math.min(index, #self.saved.lists)]
     self.saved.selectedListId = selected.id
     self:EnsureActiveTripList()
+    self:NotifyUpdate("list", {
+        action = "archived",
+        listId = list.id,
+        name = list.name,
+        selectedListId = selected.id,
+    })
     return true, list, selected
 end
 
@@ -2037,6 +2129,10 @@ function Data:RestoreList(id)
     list.archivedAt = nil
     self.saved.lists[#self.saved.lists + 1] = list
     self.saved.selectedListId = list.id
+    self:NotifyUpdate("list", {
+        action = "restored",
+        listId = list.id,
+    })
     return true, list
 end
 
@@ -2084,6 +2180,10 @@ function Data:RestoreBackup(snapshot)
         applyState(self.saved, previous)
         return false, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
     end
+    self:NotifyUpdate("list", {
+        action = "restoredAll",
+        selectedListId = self.saved.selectedListId,
+    })
     return true
 end
 
@@ -2408,7 +2508,7 @@ function Data:CountDuplicateSources(listId, sources)
     return duplicateCount
 end
 
-function Data:AddPreparedItemToList(listId, source, duplicatePolicy)
+function Data:AddPreparedItemToList(listId, source, duplicatePolicy, suppressUpdate)
     local list = self:FindList(listId)
     if not list then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
@@ -2439,6 +2539,13 @@ function Data:AddPreparedItemToList(listId, source, duplicatePolicy)
             else
                 duplicate.completed = duplicate.purchased >= desired
             end
+            if not suppressUpdate then
+                self:NotifyUpdate("item", {
+                    action = "merged",
+                    listId = list.id,
+                    itemId = duplicate.id,
+                })
+            end
             return duplicate, nil, "merged"
         elseif duplicatePolicy == "replace" then
             duplicate.desired = item.desired
@@ -2466,6 +2573,13 @@ function Data:AddPreparedItemToList(listId, source, duplicatePolicy)
             else
                 duplicate.completed = duplicate.purchased >= duplicate.desired
             end
+            if not suppressUpdate then
+                self:NotifyUpdate("item", {
+                    action = "replaced",
+                    listId = list.id,
+                    itemId = duplicate.id,
+                })
+            end
             return duplicate, nil, "replaced"
         end
     end
@@ -2476,6 +2590,13 @@ function Data:AddPreparedItemToList(listId, source, duplicatePolicy)
 
     self.saved.nextItemId = self.saved.nextItemId + 1
     table.insert(list.items, item)
+    if not suppressUpdate then
+        self:NotifyUpdate("item", {
+            action = "added",
+            listId = list.id,
+            itemId = item.id,
+        })
+    end
     return item, nil, duplicate and "kept" or "added"
 end
 
@@ -2501,7 +2622,7 @@ function Data:AddItemToList(
     }, duplicatePolicy)
 end
 
-function Data:AddItemsToList(listId, sources, duplicatePolicy)
+function Data:AddItemsToList(listId, sources, duplicatePolicy, suppressUpdate)
     local list = self:FindList(listId)
     if not list then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
@@ -2547,7 +2668,8 @@ function Data:AddItemsToList(listId, sources, duplicatePolicy)
         local item, message = self:AddPreparedItemToList(
             list.id,
             source,
-            duplicatePolicy
+            duplicatePolicy,
+            true
         )
         if not item then
             list.items = originalItems
@@ -2557,10 +2679,22 @@ function Data:AddItemsToList(listId, sources, duplicatePolicy)
         items[#items + 1] = item
     end
 
+    if not suppressUpdate and #items > 0 then
+        local ids = {}
+        for index, item in ipairs(items) do
+            ids[index] = item.id
+        end
+        self:NotifyUpdate("item", {
+            action = "changedBatch",
+            listId = list.id,
+            itemIds = ids,
+        })
+    end
+
     return items
 end
 
-function Data:AddListWithItems(name, note, sources, selectList)
+function Data:AddListWithItems(name, note, sources, selectList, category)
     if type(sources) ~= "table"
         or #sources > ShoppingListModel.MAX_ITEMS_PER_LIST
     then
@@ -2568,13 +2702,13 @@ function Data:AddListWithItems(name, note, sources, selectList)
     end
     local previousListId = self.saved.selectedListId
     local firstListId = self.saved.nextListId
-    local list, message = self:AddList(name, note)
+    local list, message = self:AddList(name, note, category, true)
     if not list then
         return nil, message
     end
 
     local items
-    items, message = self:AddItemsToList(list.id, sources)
+    items, message = self:AddItemsToList(list.id, sources, nil, true)
     if not items then
         local _, index = self:FindList(list.id)
         if index then
@@ -2587,6 +2721,21 @@ function Data:AddListWithItems(name, note, sources, selectList)
 
     if selectList == false then
         self.saved.selectedListId = previousListId
+    end
+    self:NotifyUpdate("list", {
+        action = "created",
+        listId = list.id,
+    })
+    if #items > 0 then
+        local ids = {}
+        for index, item in ipairs(items) do
+            ids[index] = item.id
+        end
+        self:NotifyUpdate("item", {
+            action = "addedBatch",
+            listId = list.id,
+            itemIds = ids,
+        })
     end
     return list, items
 end
@@ -2677,6 +2826,12 @@ function Data:UpdateItem(id, values)
     else
         item.completed = item.purchased >= item.desired
     end
+    local list = self:GetListForItem(item.id)
+    self:NotifyUpdate("item", {
+        action = "updated",
+        listId = list and list.id,
+        itemId = item.id,
+    })
     return true
 end
 
@@ -2714,6 +2869,12 @@ function Data:RemoveItem(id)
         items = { { item = item, index = index } },
     })
     table.remove(list.items, index)
+    self:NotifyUpdate("item", {
+        action = "removed",
+        listId = list.id,
+        itemId = item.id,
+        name = item.name,
+    })
     return true
 end
 
@@ -2729,6 +2890,13 @@ function Data:MoveItem(id, direction)
         return false
     end
     items[index], items[target] = items[target], items[index]
+    self:NotifyUpdate("item", {
+        action = "moved",
+        listId = list.id,
+        itemId = item.id,
+        fromIndex = index,
+        toIndex = target,
+    })
     return true
 end
 
@@ -2748,6 +2916,12 @@ function Data:ToggleItem(id)
     else
         item.completed = true
     end
+    local list = self:GetListForItem(item.id)
+    self:NotifyUpdate("item", {
+        action = "completionChanged",
+        listId = list and list.id,
+        itemId = item.id,
+    })
     return true
 end
 
@@ -2768,6 +2942,15 @@ function Data:ClearCompleted()
             listId = self:GetCurrentList().id,
             items = removed,
         })
+        local ids = {}
+        for index, entry in ipairs(removed) do
+            ids[index] = entry.item.id
+        end
+        self:NotifyUpdate("item", {
+            action = "removedBatch",
+            listId = self:GetCurrentList().id,
+            itemIds = ids,
+        })
     end
     return #removed
 end
@@ -2779,6 +2962,8 @@ function Data:UndoLastDeletion()
         return false, GetString(SI_SHOPPING_LIST_ERROR_NOTHING_TO_UNDO)
     end
 
+    local updateKind
+    local updateDetails
     if action.kind == "list" and action.list then
         local list = action.list
         if self:ListNameExists(list.name, list.id) then
@@ -2787,6 +2972,11 @@ function Data:UndoLastDeletion()
         local index = zo_clamp(tonumber(action.index) or (#self.saved.lists + 1), 1, #self.saved.lists + 1)
         table.insert(self.saved.lists, index, list)
         self.saved.selectedListId = list.id
+        updateKind = "list"
+        updateDetails = {
+            action = "restoredDeleted",
+            listId = list.id,
+        }
     elseif action.kind == "items" and type(action.items) == "table" then
         local list = self:FindList(action.listId)
         if not list then
@@ -2805,6 +2995,18 @@ function Data:UndoLastDeletion()
             end
         end
         self.saved.selectedListId = list.id
+        local ids = {}
+        for index, removed in ipairs(action.items) do
+            if removed.item then
+                ids[index] = removed.item.id
+            end
+        end
+        updateKind = "item"
+        updateDetails = {
+            action = "restoredBatch",
+            listId = list.id,
+            itemIds = ids,
+        }
     else
         table.remove(actions)
         return false, GetString(SI_SHOPPING_LIST_ERROR_NOTHING_TO_UNDO)
@@ -2812,6 +3014,7 @@ function Data:UndoLastDeletion()
 
     table.remove(actions)
     self:EnsureActiveTripList()
+    self:NotifyUpdate(updateKind, updateDetails)
     return true, action
 end
 
@@ -2960,6 +3163,26 @@ function Data:RecordPurchaseTransaction(changes, purchase)
     do
         table.remove(self.saved.purchaseTransactions, 1)
     end
+    local listIds = {}
+    local itemIds = {}
+    local seenLists = {}
+    for _, allocation in ipairs(transaction.allocations) do
+        itemIds[#itemIds + 1] = allocation.itemId
+        if not seenLists[allocation.listId] then
+            seenLists[allocation.listId] = true
+            listIds[#listIds + 1] = allocation.listId
+        end
+    end
+    self:NotifyUpdate("purchase", {
+        action = "recorded",
+        transactionId = transaction.id,
+        listIds = listIds,
+        itemIds = itemIds,
+        quantity = transaction.quantity,
+        totalPrice = transaction.totalPrice,
+        itemLink = transaction.itemLink,
+        itemName = transaction.itemName,
+    })
     return transaction
 end
 

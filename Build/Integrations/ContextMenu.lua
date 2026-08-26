@@ -49,6 +49,13 @@ function ContextMenu:Initialize(owner)
         slotActions:AddCustomSlotAction(actionName, function()
             addLinkedItem(owner, itemLink)
         end, "")
+
+        local craftingAction = owner.crafting:GetActionName(itemLink)
+        if craftingAction then
+            slotActions:AddCustomSlotAction(craftingAction, function()
+                owner.crafting:AddMasterWritMaterials(itemLink)
+            end, "")
+        end
     end, menu.CATEGORY_PRIMARY)
 
     if not LINK_HANDLER or not LINK_HANDLER.RegisterCallback then
@@ -70,6 +77,12 @@ function ContextMenu:Initialize(owner)
                 AddCustomMenuItem(actionName, function()
                     addLinkedItem(owner, itemLink)
                 end, MENU_ADD_OPTION_LABEL)
+                local craftingAction = owner.crafting:GetActionName(itemLink)
+                if craftingAction then
+                    AddCustomMenuItem(craftingAction, function()
+                        owner.crafting:AddMasterWritMaterials(itemLink)
+                    end, MENU_ADD_OPTION_LABEL)
+                end
                 ShowMenu()
             end, 4)
         end)

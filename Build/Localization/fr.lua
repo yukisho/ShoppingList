@@ -136,6 +136,7 @@ local strings = {
     SI_SHOPPING_LIST_HINT_MOUSE_WHEEL = "molette de la souris",
     SI_SHOPPING_LIST_STATUS_ADDED_ITEM = "<<1>> a été ajouté.",
     SI_SHOPPING_LIST_STATUS_API_ITEMS_ADDED = "<<1>> <<2>> ont été ajoutés à <<3>>.",
+    SI_SHOPPING_LIST_STATUS_CRAFTING_MATERIALS_ADDED = "Liste de courses : <<1>> matériaux requis ont été ajoutés à <<2>>. L'inventaire détermine la quantité restante.",
     SI_SHOPPING_LIST_STATUS_API_LIST_CREATED = "<<1>> a été créée avec <<2>> <<3>>.",
     SI_SHOPPING_LIST_SUMMARY_WITH_BUDGET = "<<1>>/<<2>> · <<3>>/<<4>>",
     SI_SHOPPING_LIST_SUMMARY_SPENT = "<<1>>/<<2>> · <<3>> dépensé",
@@ -413,6 +414,9 @@ local strings = {
     SI_SHOPPING_LIST_SEARCH_AGS_NOT_READY = "La recherche d'AwesomeGuildStore n'est pas encore prête.",
     SI_SHOPPING_LIST_SEARCH_CHOOSE_AUTOCOMPLETE = "Choisissez un résultat de saisie semi-automatique pour rendre cet article recherchable.",
     SI_SHOPPING_LIST_CONTEXT_ADD_TO_LIST = "Ajouter à <<1>>",
+    SI_SHOPPING_LIST_CONTEXT_ADD_WRIT_MATERIALS = "Ajouter les matériaux requis à <<1>>",
+    SI_SHOPPING_LIST_ERROR_CRAFTING_UNAVAILABLE = "Liste de courses : WritWorthy n'a pas pu calculer les matériaux de cette commande de maître.",
+    SI_SHOPPING_LIST_ERROR_CRAFTING_ADD_FAILED = "Liste de courses : Impossible d'ajouter ces matériaux d'artisanat (<<1>>).",
     SI_SHOPPING_LIST_CHAT_OVER_BUDGET = "Liste de courses : <<1>> dépasse le budget de <<2>> pièces d'or.",
     SI_SHOPPING_LIST_CHAT_PURCHASE_PROGRESS = "Liste de courses : <<1>> <<2>>/<<3>>",
 }

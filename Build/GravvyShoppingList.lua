@@ -43,6 +43,9 @@ function addon:Initialize()
         return
     end
     self.data = data
+    if self.API and self.API._AttachData then
+        self.API:_AttachData(data)
+    end
     self.accessibility = ShoppingListAccessibility
     self.accessibility:Initialize(self)
     self.matcher = ShoppingListMatcher
@@ -70,6 +73,7 @@ function addon:Initialize()
     self.help:Initialize()
     self.listTools = ShoppingListListTools:New(self)
     self.listTools:Initialize()
+    self.crafting = ShoppingListCraftingIntegration:New(self)
 
     self.ags = ShoppingListAGSAdapter:New(self)
     local hasAGS = self.ags:Initialize()

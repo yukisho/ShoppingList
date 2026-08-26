@@ -136,6 +136,7 @@ local strings = {
     SI_SHOPPING_LIST_HINT_MOUSE_WHEEL = "rueda del ratón",
     SI_SHOPPING_LIST_STATUS_ADDED_ITEM = "Se ha añadido <<1>>.",
     SI_SHOPPING_LIST_STATUS_API_ITEMS_ADDED = "Se han añadido <<1>> <<2>> a <<3>>.",
+    SI_SHOPPING_LIST_STATUS_CRAFTING_MATERIALS_ADDED = "Lista de compras: Se añadieron <<1>> materiales necesarios a <<2>>. El inventario determina la cantidad pendiente.",
     SI_SHOPPING_LIST_STATUS_API_LIST_CREATED = "Se ha creado <<1>> con <<2>> <<3>>.",
     SI_SHOPPING_LIST_SUMMARY_WITH_BUDGET = "<<1>>/<<2>> · <<3>>/<<4>>",
     SI_SHOPPING_LIST_SUMMARY_SPENT = "<<1>>/<<2>> · <<3>> gastado",
@@ -413,6 +414,9 @@ local strings = {
     SI_SHOPPING_LIST_SEARCH_AGS_NOT_READY = "La búsqueda de AwesomeGuildStore aún no está lista.",
     SI_SHOPPING_LIST_SEARCH_CHOOSE_AUTOCOMPLETE = "Elige un resultado de autocompletado para poder buscar este artículo.",
     SI_SHOPPING_LIST_CONTEXT_ADD_TO_LIST = "Añadir a <<1>>",
+    SI_SHOPPING_LIST_CONTEXT_ADD_WRIT_MATERIALS = "Añadir materiales necesarios a <<1>>",
+    SI_SHOPPING_LIST_ERROR_CRAFTING_UNAVAILABLE = "Lista de compras: WritWorthy no pudo calcular los materiales de este encargo magistral.",
+    SI_SHOPPING_LIST_ERROR_CRAFTING_ADD_FAILED = "Lista de compras: No se pudieron añadir esos materiales de artesanía (<<1>>).",
     SI_SHOPPING_LIST_CHAT_OVER_BUDGET = "Lista de compras: <<1>> supera el presupuesto en <<2>> de oro.",
     SI_SHOPPING_LIST_CHAT_PURCHASE_PROGRESS = "Lista de compras: <<1>> <<2>>/<<3>>",
 }

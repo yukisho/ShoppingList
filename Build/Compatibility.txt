@@ -13,3 +13,9 @@ Manifest minimums reflect the oldest supported library interfaces. LibSets
 are present there; 0.9.3 is the tested and recommended release.
 
 AwesomeGuildStore and LibCustomMenu remain optional integrations.
+
+WritWorthy 7.5.8 is verified as an optional crafting integration. When both
+WritWorthy and LibCustomMenu are enabled, Master Writ context menus can send
+the writ's calculated material requirements to the current shopping list.
+Shopping List calls WritWorthy.ToMatKnowList and does not read its saved
+variables or alter its queued-writ state.

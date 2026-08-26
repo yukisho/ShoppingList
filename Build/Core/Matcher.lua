@@ -103,7 +103,7 @@ function Matcher:MatchesItem(entry, itemLink, itemName)
     return self:GetScore(entry, details, true) ~= nil
 end
 
-function Matcher:ApplyPurchase(items, itemLink, itemName, quantity, getRemaining)
+function Matcher:PreviewPurchase(items, itemLink, itemName, quantity, getRemaining)
     local purchase = getPurchaseDetails(itemLink, itemName)
     local matches = {}
 
@@ -124,28 +124,43 @@ function Matcher:ApplyPurchase(items, itemLink, itemName, quantity, getRemaining
     local remaining = math.max(0, tonumber(quantity) or 0)
     local changes = {}
     for _, match in ipairs(matches) do
-        if remaining == 0 then
-            break
-        end
-
         local entry = match.entry
         local needed = getRemaining and getRemaining(entry)
             or (entry.completed and 0 or entry.desired - entry.purchased)
+        needed = math.max(0, tonumber(needed) or 0)
         local applied = math.min(needed, remaining)
+        match.remaining = needed
+        match.quantity = applied
         if applied > 0 then
-            local wasComplete = entry.completed
-            entry.purchased = entry.purchased + applied
-            if (entry.targetMode or "buy") == "buy" then
-                entry.completed = entry.purchased >= entry.desired
-            end
             remaining = remaining - applied
             changes[#changes + 1] = {
                 entry = entry,
                 quantity = applied,
-                completed = entry.completed and not wasComplete,
+                completed = applied >= needed,
+                score = match.score,
             }
         end
     end
 
+    return changes, remaining, matches
+end
+
+function Matcher:ApplyPurchase(items, itemLink, itemName, quantity, getRemaining)
+    local changes = self:PreviewPurchase(
+        items,
+        itemLink,
+        itemName,
+        quantity,
+        getRemaining
+    )
+    for _, change in ipairs(changes) do
+        local entry = change.entry
+        local wasComplete = entry.completed
+        entry.purchased = entry.purchased + change.quantity
+        if (entry.targetMode or "buy") == "buy" then
+            entry.completed = entry.purchased >= entry.desired
+        end
+        change.completed = entry.completed and not wasComplete
+    end
     return changes
 end

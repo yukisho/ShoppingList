@@ -1,7 +1,13 @@
 local releaseNotes = {
     en = [[
 
-Current release · 0.18.7
+Current release · 0.18.8
+• Added a shopping-session summary with purchases, spending, updated lists, and remaining entries.
+• Expanded the public API with list management, progress snapshots, and non-mutating matching previews.
+• Added protected list, item, and purchase update callbacks while retaining API v1 and v2 compatibility.
+• Added crafting-material transfers for companion add-ons and a WritWorthy Master Writ action that merges requirements into Own Total entries.
+
+0.18.7
 • Reorganized the add-on into clear core, feature, integration, keyboard, gamepad, and shared UI modules.
 • Added per-list item searching and sorting by name, quantity, ownership, completion, price target, and date added.
 • Added favorite and pinned lists plus optional list categories.
@@ -24,7 +30,13 @@ Current release · 0.18.7
 • Added inventory-aware quantities, notes, full SLB1 backup, accessibility settings, chat-link actions, and Spanish and French translations.]],
     es = [[
 
-Versión actual · 0.18.7
+Versión actual · 0.18.8
+• Se añadió un resumen de la sesión de compras con compras, gastos, listas actualizadas y entradas pendientes.
+• Se amplió la API pública con gestión de listas, datos de progreso y vistas previas de coincidencia sin modificaciones.
+• Se añadieron eventos protegidos para cambios de listas, artículos y compras, conservando la compatibilidad con las API v1 y v2.
+• Se añadieron transferencias de materiales para complementos de artesanía y una acción de encargos magistrales de WritWorthy que combina los requisitos como Total propio.
+
+0.18.7
 • Se reorganizó el complemento en módulos claros de núcleo, funciones, integraciones e interfaz para teclado, mando y elementos compartidos.
 • Se añadieron búsquedas y ordenación por lista según nombre, cantidad, posesión, estado, precio objetivo y fecha de adición.
 • Se añadieron listas favoritas y fijadas, además de categorías opcionales.
@@ -47,7 +59,13 @@ Versión actual · 0.18.7
 • Se añadieron cantidades de inventario, notas, copia completa SLB1, accesibilidad, acciones de enlaces del chat y traducciones al español y francés.]],
     fr = [[
 
-Version actuelle · 0.18.7
+Version actuelle · 0.18.8
+• Ajout d'un résumé de session avec achats, dépenses, listes mises à jour et entrées restantes.
+• Extension de l'API publique avec gestion des listes, états de progression et aperçus de correspondance sans modification.
+• Ajout de rappels protégés pour les mises à jour des listes, articles et achats, tout en conservant la compatibilité avec les API v1 et v2.
+• Ajout du transfert de matériaux pour les extensions d'artisanat et d'une action WritWorthy qui fusionne les besoins d'une commande de maître en objectifs Total possédé.
+
+0.18.7
 • Réorganisation de l'extension en modules clairs pour le cœur, les fonctions, les intégrations et les interfaces clavier, manette et partagées.
 • Ajout de la recherche par liste et du tri par nom, quantité, possession, état, prix cible et date d'ajout.
 • Ajout des listes favorites et épinglées ainsi que de catégories facultatives.
