@@ -104,9 +104,13 @@ function Help:ShowSection(section)
     self.sectionTitle:SetText(GetString(showingHelp
         and SI_SHOPPING_LIST_HELP_GETTING_STARTED
         or SI_SHOPPING_LIST_HELP_RELEASE_NOTES))
-    self.content:SetText(GetString(showingHelp
+    local content = GetString(showingHelp
         and SI_SHOPPING_LIST_HELP_CONTENT
-        or SI_SHOPPING_LIST_RELEASE_NOTES_CONTENT))
+        or SI_SHOPPING_LIST_RELEASE_NOTES_CONTENT)
+    if showingHelp then
+        content = GetString(SI_SHOPPING_LIST_HELP_DUPLICATES) .. "\n\n" .. content
+    end
+    self.content:SetText(content)
     self.gettingStarted:SetEnabled(not showingHelp)
     self.releaseNotes:SetEnabled(showingHelp)
 end

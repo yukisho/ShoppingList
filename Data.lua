@@ -2020,15 +2020,16 @@ function Data:GetFilteredShoppingItems()
     return result
 end
 
-function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note, targetMode)
-    local list = self:FindList(listId)
-    if not list then
-        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+function Data:BuildItemCandidate(source)
+    if type(source) ~= "table" then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
     end
 
-    if #list.items >= ShoppingListModel.MAX_ITEMS_PER_LIST then
-        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_FULL)
-    end
+    local name = source.name
+    local itemLink = source.itemLink
+    local note = source.note
+    local quantity = source.quantity ~= nil and source.quantity or source.desired
+    local targetMode = source.targetMode or "buy"
 
     if type(name) ~= "string" and name ~= nil then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_ENTER_ITEM_NAME)
@@ -2043,9 +2044,8 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note, ta
     name = zo_strtrim(name or "")
     itemLink = itemLink or ""
     quantity = tonumber(quantity) or 1
-    targetMode = targetMode or "buy"
 
-    if name == "" and itemLink and itemLink ~= "" then
+    if name == "" and itemLink ~= "" then
         name = GetItemLinkName(itemLink)
     end
     if name == "" then
@@ -2077,24 +2077,26 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note, ta
         end
     end
 
+    local maxUnitPrice = source.maxUnitPrice
+    if maxUnitPrice ~= nil then
+        maxUnitPrice = tonumber(maxUnitPrice)
+        if not ShoppingListModel:IsWholeNumber(
+            maxUnitPrice,
+            1,
+            ShoppingListModel.MAX_PRICE
+        ) then
+            return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_PRICE)
+        end
+    end
+
     local details = readLinkDetails(itemLink)
-    local item = {
-        id = self.saved.nextItemId,
-        name = zo_strformat(SI_TOOLTIP_ITEM_NAME, name),
-        note = normalizeNote(note),
-        normalizedName = normalizeName(name),
-        nameHash = nameHash,
-        itemLink = itemLink,
-        itemId = details.itemId,
-        desired = quantity,
-        purchased = 0,
-        targetMode = targetMode,
-        completed = false,
-        purchaseHistory = {},
-        purchaseCount = 0,
-        totalSpent = 0,
-        pricedQuantity = 0,
-        maxUnitPrice = nil,
+    local match = source.match
+    if match ~= nil then
+        match = ShoppingListModel:NormalizeMatchingRule(match)
+        if not match then
+            return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_MATCH)
+        end
+    else
         match = {
             setId = details.setId,
             setName = details.setName,
@@ -2105,15 +2107,48 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note, ta
             levelMode = "any",
             level = details.level,
             championPoints = details.championPoints,
-        },
-    }
+        }
+    end
+    if source.ignoreLinkTrait then
+        match.traitType = nil
+    end
 
-    self.saved.nextItemId = self.saved.nextItemId + 1
-    table.insert(list.items, item)
-    return item
+    return {
+        id = self.saved.nextItemId,
+        name = zo_strformat(SI_TOOLTIP_ITEM_NAME, name),
+        note = normalizeNote(note),
+        normalizedName = normalizeName(name),
+        nameHash = source.nameHash,
+        itemLink = itemLink,
+        itemId = details.itemId,
+        desired = quantity,
+        purchased = 0,
+        targetMode = targetMode,
+        completed = false,
+        purchaseHistory = {},
+        purchaseCount = 0,
+        totalSpent = 0,
+        pricedQuantity = 0,
+        maxUnitPrice = maxUnitPrice,
+        match = match,
+    }
 end
 
-function Data:AddItemsToList(listId, sources)
+function Data:FindDuplicateItem(listId, candidate)
+    local list = self:FindList(listId)
+    if not list then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+
+    for index, item in ipairs(list.items) do
+        if ShoppingListModel:ItemsAreDuplicates(item, candidate) then
+            return item, nil, index
+        end
+    end
+    return nil
+end
+
+function Data:CountDuplicateSources(listId, sources)
     local list = self:FindList(listId)
     if not list then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
@@ -2121,12 +2156,153 @@ function Data:AddItemsToList(listId, sources)
     if type(sources) ~= "table" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
     end
-    if #list.items + #sources > ShoppingListModel.MAX_ITEMS_PER_LIST then
+
+    local candidates = {}
+    local duplicateCount = 0
+    for _, source in ipairs(sources) do
+        local candidate, message = self:BuildItemCandidate(source)
+        if not candidate then
+            return nil, message
+        end
+
+        local duplicate = false
+        for _, item in ipairs(list.items) do
+            if ShoppingListModel:ItemsAreDuplicates(item, candidate) then
+                duplicate = true
+                break
+            end
+        end
+        if not duplicate then
+            for _, prior in ipairs(candidates) do
+                if ShoppingListModel:ItemsAreDuplicates(prior, candidate) then
+                    duplicate = true
+                    break
+                end
+            end
+        end
+        if duplicate then
+            duplicateCount = duplicateCount + 1
+        end
+        candidates[#candidates + 1] = candidate
+    end
+    return duplicateCount
+end
+
+function Data:AddPreparedItemToList(listId, source, duplicatePolicy)
+    local list = self:FindList(listId)
+    if not list then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+
+    duplicatePolicy = duplicatePolicy or "keep"
+    if not ShoppingListModel:IsValidDuplicatePolicy(duplicatePolicy) then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_DUPLICATE_POLICY)
+    end
+
+    local item, message = self:BuildItemCandidate(source)
+    if not item then
+        return nil, message
+    end
+
+    local duplicate = self:FindDuplicateItem(list.id, item)
+    if duplicate then
+        if duplicatePolicy == "prompt" then
+            return nil, GetString(SI_SHOPPING_LIST_STATUS_DUPLICATE_FOUND), duplicate
+        elseif duplicatePolicy == "merge" then
+            local desired = duplicate.desired + item.desired
+            if desired > ShoppingListModel.MAX_QUANTITY then
+                return nil, GetString(SI_SHOPPING_LIST_ERROR_DUPLICATE_MERGE_QUANTITY)
+            end
+            duplicate.desired = desired
+            if self:GetTargetMode(duplicate) == "own" then
+                duplicate.completed = self:GetOwnedQuantity(duplicate) >= desired
+            else
+                duplicate.completed = duplicate.purchased >= desired
+            end
+            return duplicate, nil, "merged"
+        elseif duplicatePolicy == "replace" then
+            duplicate.desired = item.desired
+            if (duplicate.itemLink or "") == "" and item.itemLink ~= "" then
+                duplicate.name = item.name
+                duplicate.normalizedName = item.normalizedName
+                duplicate.nameHash = item.nameHash or duplicate.nameHash
+                duplicate.itemLink = item.itemLink
+                duplicate.itemId = item.itemId
+                local rule = duplicate.match or {}
+                rule.quality = rule.quality or item.match.quality
+                rule.level = rule.level or item.match.level
+                rule.championPoints = rule.championPoints
+                    or item.match.championPoints
+                duplicate.match = rule
+            end
+            if source.note ~= nil then
+                duplicate.note = item.note
+            end
+            if source.maxUnitPrice ~= nil then
+                duplicate.maxUnitPrice = item.maxUnitPrice
+            end
+            if self:GetTargetMode(duplicate) == "own" then
+                duplicate.completed = self:GetOwnedQuantity(duplicate) >= duplicate.desired
+            else
+                duplicate.completed = duplicate.purchased >= duplicate.desired
+            end
+            return duplicate, nil, "replaced"
+        end
+    end
+
+    if #list.items >= ShoppingListModel.MAX_ITEMS_PER_LIST then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_FULL)
+    end
+
+    self.saved.nextItemId = self.saved.nextItemId + 1
+    table.insert(list.items, item)
+    return item, nil, duplicate and "kept" or "added"
+end
+
+function Data:AddItemToList(
+    listId,
+    name,
+    quantity,
+    itemLink,
+    nameHash,
+    note,
+    targetMode,
+    duplicatePolicy,
+    match
+)
+    return self:AddPreparedItemToList(listId, {
+        name = name,
+        quantity = quantity,
+        itemLink = itemLink,
+        nameHash = nameHash,
+        note = note,
+        targetMode = targetMode,
+        match = match,
+    }, duplicatePolicy)
+end
+
+function Data:AddItemsToList(listId, sources, duplicatePolicy)
+    local list = self:FindList(listId)
+    if not list then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if type(sources) ~= "table" then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
+    end
+    duplicatePolicy = duplicatePolicy or "keep"
+    if not ShoppingListModel:IsValidDuplicatePolicy(duplicatePolicy)
+        or duplicatePolicy == "prompt"
+    then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_DUPLICATE_POLICY)
+    end
+    if duplicatePolicy == "keep"
+        and #list.items + #sources > ShoppingListModel.MAX_ITEMS_PER_LIST
+    then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_FULL)
     end
 
     local firstItemId = self.saved.nextItemId
-    local firstIndex = #list.items + 1
+    local originalItems = deepCopy(list.items)
     local items = {}
 
     for _, source in ipairs(sources) do
@@ -2148,28 +2324,15 @@ function Data:AddItemsToList(listId, sources)
     end
 
     for _, source in ipairs(sources) do
-        local item, message = self:AddItemToList(
+        local item, message = self:AddPreparedItemToList(
             list.id,
-            source.name,
-            source.quantity,
-            source.itemLink,
-            nil,
-            source.note,
-            source.targetMode
+            source,
+            duplicatePolicy
         )
         if not item then
-            while #list.items >= firstIndex do
-                table.remove(list.items)
-            end
+            list.items = originalItems
             self.saved.nextItemId = firstItemId
             return nil, message
-        end
-
-        if source.match then
-            item.match = ShoppingListModel:NormalizeMatchingRule(source.match)
-        end
-        if source.maxUnitPrice then
-            item.maxUnitPrice = source.maxUnitPrice
         end
         items[#items + 1] = item
     end

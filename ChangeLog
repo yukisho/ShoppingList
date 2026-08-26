@@ -1,38 +1,14 @@
 0.18.5
-• Added persistent recurring-list designations and keyboard/gamepad Reset Progress actions for starting a new shopping cycle.
+• Added duplicate detection for keyboard, gamepad, linked item, and bulk adds with Merge, Replace, and Keep Separate choices.
+• Duplicate comparisons respect item identity, matching rules, and Buy More versus Own Total target modes; batch choices commit atomically.
 • Reset Progress now clears purchased and manual completion quantities only, preserving list contents, notes, rules, budgets, purchase history, and recorded spending.
-• Added a confirmed pre-reset safety copy, cycle count, last-reset time, recurring list markers, and strict backup validation.
-• Changed keyboard item rows to place quantity and inventory progress beneath the item name so Own Total counts are no longer clipped by the Edit button.
-• Added per-item Buy More and Own Total quantity targets in the keyboard and gamepad editors.
+• Added per item Buy More and Own Total quantity targets in the keyboard and gamepad editors.
 • Own Total entries now calculate remaining quantity and completion from matching backpack, bank, subscriber bank, and craft bag inventory without recording owned items as purchases.
-• Added a schema version 4 safety migration that preserves existing entries as Buy More, plus strict backup and public API validation for quantity target modes.
-• Added SL3 lightweight sharing for recurring-list state and quantity target modes while retaining SL1 and SL2 imports as ordinary Buy More lists.
-• Corrected transactional migration and restore code treating ESO's SavedVars interface as ordinary list data, which caused newly added items to disappear after reloads.
-• Changed legacy recovery to snapshot the former raw account data without creating a second live SavedVars interface for the same ShoppingList_Data global.
-• Added a separate SavedVariables recovery store that captures the complete primary data before every startup migration or normalization.
-• Added automatic first open recovery when startup comparison detects that lists, items, history, transactions, notes, or other meaningful list state disappeared.
-• Included existing pre migration safety copies as a recovery source for installations affected before the separate store was created.
 • Added deactivation and logout checkpoints while retaining ten distinct recovery states without filling the history with identical copies.
-• Restored reliable automatic opening beside guild traders by applying missing legacy setting defaults and listening to both trading house events and scene state changes.
 • Separated full guild store transaction spending from the cost allocated to quantities that shopping list entries actually needed; list budgets now use full transaction spending.
-• Added bounded transaction and item purchase histories while preserving lifetime quantities and spending totals.
 • Added backup size and health reporting before SLB1 codes approach their hard limit.
 • Cleared retained AwesomeGuildStore filters before Shopping List searches, including name only searches.
 • Centralized matching rules, quantities, prices, item counts, names, notes, and link limits across data, editors, sharing, backup validation, bulk entry, and the public API.
-• Made linked item matching and inventory counts prefer stable item and set IDs, and refresh cached localized names when ESO's language changes.
-• Changed keyboard accessibility scaling to resize text and window geometry together; gamepad continues to use ESO's native accessibility scaling.
-• Added a tracked npm test suite for source parsing, manifest order, localization parity, migrations, data safety, matching, accounting, inventory, AGS, sharing, backups, and public API compatibility.
-• Upgraded saved data to schema version 4 with detached, transactional migrations that commit only after the complete candidate is valid.
-• Added checksummed automatic safety copies before migrations, imports, full restores, and legacy data recovery, retaining the five newest copies.
-• Added keyboard and gamepad controls for restoring automatic safety copies.
-• Added an optional ShoppingList compatibility loader that safely merges data stranded by the former manifest name without replacing current lists or importing twice.
-• Replaced anonymous default backdrops with uniquely named controls to prevent ESO MungeOverlay collisions and missing window visuals.
-• Removed invalid gamepad backdrop color XML children; the existing Lua accessibility path continues to apply those colors.
-• Added strict typed SLB1 restore validation for arrays, IDs, strings, quantities, prices, matching rules, purchase history, settings, and Recently Deleted data.
-• Rejects malformed or internally inconsistent full backups before creating a restore snapshot or changing live data, with atomic rollback retained as a final safeguard.
-• Updated the ESO manifest compatibility marker to API 101051 and recorded the verified required library baseline.
-• Updated the English, Spanish, and French in game release notes for 0.18.0.
-• Added a clean staging release builder that packages only manifest runtime files, documentation, and the optional legacy recovery loader.
 
 0.18.0
 • Added LibSets backed set searching to item autocomplete.

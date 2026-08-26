@@ -3,17 +3,13 @@ ShoppingListContextMenu = {}
 local ContextMenu = ShoppingListContextMenu
 
 local function addLinkedItem(owner, itemLink)
-    local item, message = owner:AddItem("", 1, itemLink)
-    if not item then
-        owner.ui:SetStatus(message, true)
-        return
-    end
-
-    owner.ui:SetStatus(zo_strformat(
-        GetString(SI_SHOPPING_LIST_STATUS_ADDED_ITEM),
-        item.name
-    ))
-    owner.editor:Open(item)
+    owner.ui:AddSourceWithDuplicatePrompt({
+        name = "",
+        quantity = 1,
+        itemLink = itemLink,
+    }, function(item)
+        owner.editor:Open(item)
+    end)
 end
 
 local function getAddActionName(owner)

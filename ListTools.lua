@@ -5,6 +5,7 @@ local MAX_BULK_ITEMS = ShoppingListModel.MAX_ITEMS_PER_LIST
 local MAX_BULK_TEXT = 20000
 local TRIP_ROW_COUNT = 10
 local TRIP_ROW_HEIGHT = 31
+local BULK_DUPLICATE_DIALOG = "SHOPPING_LIST_BULK_DUPLICATES"
 
 local function makeLabel(parent, font)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
@@ -90,6 +91,46 @@ end
 function ListTools:Initialize()
     self:CreateBulkWindow()
     self:CreateTripWindow()
+    self:InitializeDialogs()
+end
+
+function ListTools:InitializeDialogs()
+    ZO_Dialogs_RegisterCustomDialog(BULK_DUPLICATE_DIALOG, {
+        title = { text = SI_SHOPPING_LIST_DUPLICATE_ITEM_TITLE },
+        mainText = {
+            text = function(dialog)
+                return zo_strformat(
+                    GetString(SI_SHOPPING_LIST_BULK_DUPLICATE_CONFIRM),
+                    dialog.data.duplicateCount
+                )
+            end,
+        },
+        buttons = {
+            {
+                text = SI_SHOPPING_LIST_BUTTON_MERGE,
+                callback = function(dialog)
+                    self:CompleteBulkItems(dialog.data.entries, "merge")
+                end,
+            },
+            {
+                text = SI_SHOPPING_LIST_BUTTON_REPLACE,
+                callback = function(dialog)
+                    self:CompleteBulkItems(dialog.data.entries, "replace")
+                end,
+            },
+            {
+                text = SI_SHOPPING_LIST_BUTTON_KEEP_SEPARATE,
+                callback = function(dialog)
+                    self:CompleteBulkItems(dialog.data.entries, "keep")
+                end,
+            },
+        },
+        finishedCallback = function()
+            if self.owner.ui then
+                self.owner.ui:RestoreOwnedMouse()
+            end
+        end,
+    })
 end
 
 function ListTools:CreateBulkWindow()
@@ -283,8 +324,38 @@ function ListTools:AddBulkItems()
         return
     end
 
-    for _, entry in ipairs(entries) do
-        self.owner.data:AddItem(entry.name, entry.quantity)
+    local list = self.owner.data:GetCurrentList()
+    local duplicateCount, duplicateMessage = self.owner.data:CountDuplicateSources(
+        list.id,
+        entries
+    )
+    if duplicateCount == nil then
+        self:SetBulkStatus(duplicateMessage, true)
+        return
+    end
+    if duplicateCount > 0 then
+        self.bulkEdit:LoseFocus()
+        ZO_Dialogs_ShowDialog(BULK_DUPLICATE_DIALOG, {
+            entries = entries,
+            duplicateCount = duplicateCount,
+        })
+        return
+    end
+
+    self:CompleteBulkItems(entries, "keep")
+end
+
+function ListTools:CompleteBulkItems(entries, duplicatePolicy)
+    local list = self.owner.data:GetCurrentList()
+    local items, message = self.owner.data:AddItemsToList(
+        list.id,
+        entries,
+        duplicatePolicy
+    )
+    if not items then
+        self:SetBulkStatus(message, true)
+        self.bulkEdit:TakeFocus()
+        return
     end
     self:CloseBulkWindow()
     self.owner.ui:Refresh()
@@ -292,7 +363,7 @@ function ListTools:AddBulkItems()
     self.owner:RefreshInventory()
     self.owner.ui:SetStatus(zo_strformat(
         GetString(SI_SHOPPING_LIST_BULK_ADDED),
-        #entries
+        #items
     ))
 end
 

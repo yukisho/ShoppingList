@@ -14,6 +14,7 @@ local FOOTER_HEIGHT = 108
 local SUGGESTION_ROWS = 6
 local REMOVE_ITEM_DIALOG = "SHOPPING_LIST_CONFIRM_REMOVE_ITEM"
 local RESET_PROGRESS_DIALOG = "SHOPPING_LIST_CONFIRM_RESET_PROGRESS"
+local DUPLICATE_ITEM_DIALOG = "SHOPPING_LIST_DUPLICATE_ITEM"
 local DONATION_RECIPIENT = "@Gravvy"
 local NORTH_AMERICAN_MEGASERVER = "NA Megaserver"
 
@@ -320,6 +321,44 @@ function UI:InitializeDialogs()
                 end,
             },
             { text = SI_DIALOG_CANCEL },
+        },
+        finishedCallback = function()
+            self:RestoreOwnedMouse()
+        end,
+    })
+    ZO_Dialogs_RegisterCustomDialog(DUPLICATE_ITEM_DIALOG, {
+        title = {
+            text = SI_SHOPPING_LIST_DUPLICATE_ITEM_TITLE,
+        },
+        mainText = {
+            text = function(dialog)
+                return zo_strformat(
+                    GetString(SI_SHOPPING_LIST_DUPLICATE_ITEM_CONFIRM),
+                    dialog.data.duplicate.name,
+                    dialog.data.duplicate.desired,
+                    dialog.data.source.quantity or dialog.data.source.desired or 1
+                )
+            end,
+        },
+        buttons = {
+            {
+                text = SI_SHOPPING_LIST_BUTTON_MERGE,
+                callback = function(dialog)
+                    self:CompleteDuplicateAdd(dialog.data, "merge")
+                end,
+            },
+            {
+                text = SI_SHOPPING_LIST_BUTTON_REPLACE,
+                callback = function(dialog)
+                    self:CompleteDuplicateAdd(dialog.data, "replace")
+                end,
+            },
+            {
+                text = SI_SHOPPING_LIST_BUTTON_KEEP_SEPARATE,
+                callback = function(dialog)
+                    self:CompleteDuplicateAdd(dialog.data, "keep")
+                end,
+            },
         },
         finishedCallback = function()
             self:RestoreOwnedMouse()
@@ -1216,23 +1255,7 @@ function UI:ChooseSuggestion(index)
     self.suggestionPanel:SetHidden(true)
 end
 
-function UI:AddFromInput()
-    local item, message = self.owner:AddItem(
-        self.nameEdit:GetText(),
-        self.quantityEdit:GetText(),
-        self.selectedItemLink,
-        self.selectedNameHash
-    )
-    if not item then
-        self:SetStatus(message, true)
-        return
-    end
-    if self.selectedSetId and item.match then
-        -- The set picker does not ask for a trait, so its representative link
-        -- must not quietly turn into an exact-trait shopping rule.
-        item.match.traitType = nil
-    end
-
+function UI:ClearAddInput()
     self.suppressAutocomplete = true
     self.nameEdit:SetText("")
     self.suppressAutocomplete = false
@@ -1242,10 +1265,72 @@ function UI:AddFromInput()
     self.selectedSetId = nil
     self.suggestionData = nil
     self.suggestionPanel:SetHidden(true)
+end
+
+function UI:SetAddedItemStatus(item, source, result)
+    local stringId = SI_SHOPPING_LIST_STATUS_ADDED_ITEM
+    if result == "merged" then
+        stringId = SI_SHOPPING_LIST_STATUS_DUPLICATE_MERGED
+    elseif result == "replaced" then
+        stringId = SI_SHOPPING_LIST_STATUS_DUPLICATE_REPLACED
+    elseif result == "kept" then
+        stringId = SI_SHOPPING_LIST_STATUS_DUPLICATE_KEPT
+    end
     self:SetStatus(zo_strformat(
-        GetString(SI_SHOPPING_LIST_STATUS_ADDED_ITEM),
-        item.name
+        GetString(stringId),
+        item.name,
+        item.desired,
+        source.quantity or source.desired or 1
     ))
+end
+
+function UI:CompleteDuplicateAdd(data, policy)
+    local item, message, result = self.owner:AddItemSource(data.source, policy)
+    if not item then
+        self:SetStatus(message, true)
+        return
+    end
+    self:SetAddedItemStatus(item, data.source, result)
+    if data.callback then
+        data.callback(item, result)
+    end
+end
+
+function UI:AddSourceWithDuplicatePrompt(source, callback)
+    local item, message, result = self.owner:AddItemSource(source, "prompt")
+    if item then
+        self:SetAddedItemStatus(item, source, result)
+        if callback then
+            callback(item, result)
+        end
+        return item
+    end
+    if result then
+        ZO_Dialogs_ShowDialog(DUPLICATE_ITEM_DIALOG, {
+            source = source,
+            duplicate = result,
+            callback = callback,
+        })
+        return nil
+    end
+    self:SetStatus(message, true)
+    return nil
+end
+
+function UI:AddFromInput()
+    local source = {
+        name = self.nameEdit:GetText(),
+        quantity = self.quantityEdit:GetText(),
+        itemLink = self.selectedItemLink,
+        nameHash = self.selectedNameHash,
+        -- Set autocomplete uses a representative link. Its trait is not a
+        -- player-selected rule and should not make otherwise identical set
+        -- entries appear different.
+        ignoreLinkTrait = self.selectedSetId ~= nil,
+    }
+    self:AddSourceWithDuplicatePrompt(source, function()
+        self:ClearAddInput()
+    end)
 end
 
 function UI:SetStatus(text, isError)

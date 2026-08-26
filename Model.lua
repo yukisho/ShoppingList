@@ -24,6 +24,12 @@ ShoppingListModel = {
         buy = true,
         own = true,
     },
+    DUPLICATE_POLICIES = {
+        keep = true,
+        prompt = true,
+        merge = true,
+        replace = true,
+    },
 }
 
 local Model = ShoppingListModel
@@ -59,6 +65,10 @@ end
 
 function Model:IsValidTargetMode(value)
     return type(value) == "string" and self.TARGET_MODES[value] == true
+end
+
+function Model:IsValidDuplicatePolicy(value)
+    return type(value) == "string" and self.DUPLICATE_POLICIES[value] == true
 end
 
 function Model:NormalizeTargetMode(value)
@@ -176,4 +186,67 @@ end
 
 function Model:IsValidMatchingRule(rule)
     return self:NormalizeMatchingRule(rule, false) ~= nil
+end
+
+local function activeTrait(rule)
+    local traitType = rule and rule.traitType
+    if traitType == ITEM_TRAIT_TYPE_NONE then
+        return nil
+    end
+    return traitType
+end
+
+local function sameSetRule(left, right)
+    local leftHasSet = left.setId ~= nil or left.normalizedSetName ~= nil
+    local rightHasSet = right.setId ~= nil or right.normalizedSetName ~= nil
+    if leftHasSet ~= rightHasSet then
+        return false
+    end
+    if not leftHasSet then
+        return true
+    end
+    if left.setId ~= nil and right.setId ~= nil then
+        return left.setId == right.setId
+    end
+    return left.normalizedSetName ~= nil
+        and left.normalizedSetName == right.normalizedSetName
+end
+
+function Model:MatchingRulesEqual(left, right)
+    left = self:NormalizeMatchingRule(left, true)
+    right = self:NormalizeMatchingRule(right, true)
+
+    if not sameSetRule(left, right)
+        or activeTrait(left) ~= activeTrait(right)
+        or left.qualityMode ~= right.qualityMode
+        or left.levelMode ~= right.levelMode
+    then
+        return false
+    end
+    if left.qualityMode ~= "any" and left.quality ~= right.quality then
+        return false
+    end
+    if left.levelMode ~= "any" then
+        return left.level == right.level
+            and left.championPoints == right.championPoints
+    end
+    return true
+end
+
+function Model:ItemsAreDuplicates(left, right)
+    if type(left) ~= "table" or type(right) ~= "table" then
+        return false
+    end
+
+    if left.itemId ~= nil and right.itemId ~= nil then
+        if left.itemId ~= right.itemId then
+            return false
+        end
+    elseif left.normalizedName ~= right.normalizedName then
+        return false
+    end
+
+    return self:NormalizeTargetMode(left.targetMode)
+            == self:NormalizeTargetMode(right.targetMode)
+        and self:MatchingRulesEqual(left.match, right.match)
 end

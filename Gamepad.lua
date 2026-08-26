@@ -3,6 +3,7 @@ ShoppingListGamepad = {}
 local Gamepad = ShoppingListGamepad
 local REMOVE_DIALOG = "SHOPPING_LIST_GAMEPAD_REMOVE_ITEM"
 local ADD_DIALOG = "SHOPPING_LIST_GAMEPAD_ADD_ITEM"
+local DUPLICATE_DIALOG = "SHOPPING_LIST_GAMEPAD_DUPLICATE_ITEM"
 
 local function formatCompactGold(value)
     value = math.floor((tonumber(value) or 0) + 0.5)
@@ -252,19 +253,30 @@ function Gamepad:InitializeDialogs()
                 keybind = "DIALOG_SECONDARY",
                 text = SI_SHOPPING_LIST_BUTTON_ADD,
                 callback = function()
-                    local item, message = self.owner:AddItem(
-                        self.pendingItemName,
-                        self.pendingItemQuantity
+                    local source = {
+                        name = self.pendingItemName,
+                        quantity = self.pendingItemQuantity,
+                    }
+                    local item, message, result = self.owner:AddItemSource(
+                        source,
+                        "prompt"
                     )
                     if not item then
+                        if result then
+                            ZO_Dialogs_ReleaseDialogOnButtonPress(ADD_DIALOG)
+                            zo_callLater(function()
+                                ZO_Dialogs_ShowGamepadDialog(DUPLICATE_DIALOG, {
+                                    source = source,
+                                    duplicate = result,
+                                })
+                            end, 1)
+                            return
+                        end
                         ZO_Alert(UI_ALERT_CATEGORY_ERROR, SOUNDS.NEGATIVE_CLICK, message)
                         return
                     end
                     ZO_Dialogs_ReleaseDialogOnButtonPress(ADD_DIALOG)
-                    self:SetStatus(zo_strformat(
-                        GetString(SI_SHOPPING_LIST_STATUS_ADDED_ITEM),
-                        item.name
-                    ))
+                    self:SetDuplicateStatus(item, source, result)
                 end,
             },
             {
@@ -276,6 +288,78 @@ function Gamepad:InitializeDialogs()
             },
         },
     })
+
+    ZO_Dialogs_RegisterCustomDialog(DUPLICATE_DIALOG, {
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.BASIC,
+        },
+        title = {
+            text = SI_SHOPPING_LIST_DUPLICATE_ITEM_TITLE,
+        },
+        mainText = {
+            text = function(dialog)
+                return zo_strformat(
+                    GetString(SI_SHOPPING_LIST_DUPLICATE_ITEM_CONFIRM),
+                    dialog.data.duplicate.name,
+                    dialog.data.duplicate.desired,
+                    dialog.data.source.quantity or 1
+                )
+            end,
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_SHOPPING_LIST_BUTTON_MERGE,
+                callback = function(dialog)
+                    self:CompleteDuplicateAdd(dialog.data.source, "merge")
+                end,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_SHOPPING_LIST_BUTTON_REPLACE,
+                callback = function(dialog)
+                    self:CompleteDuplicateAdd(dialog.data.source, "replace")
+                end,
+            },
+            {
+                keybind = "DIALOG_TERTIARY",
+                text = SI_SHOPPING_LIST_BUTTON_KEEP_SEPARATE,
+                callback = function(dialog)
+                    self:CompleteDuplicateAdd(dialog.data.source, "keep")
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+            },
+        },
+    })
+end
+
+function Gamepad:SetDuplicateStatus(item, source, result)
+    local stringId = SI_SHOPPING_LIST_STATUS_ADDED_ITEM
+    if result == "merged" then
+        stringId = SI_SHOPPING_LIST_STATUS_DUPLICATE_MERGED
+    elseif result == "replaced" then
+        stringId = SI_SHOPPING_LIST_STATUS_DUPLICATE_REPLACED
+    elseif result == "kept" then
+        stringId = SI_SHOPPING_LIST_STATUS_DUPLICATE_KEPT
+    end
+    self:SetStatus(zo_strformat(
+        GetString(stringId),
+        item.name,
+        item.desired,
+        source.quantity or source.desired or 1
+    ))
+end
+
+function Gamepad:CompleteDuplicateAdd(source, policy)
+    local item, message, result = self.owner:AddItemSource(source, policy)
+    if not item then
+        ZO_Alert(UI_ALERT_CATEGORY_ERROR, SOUNDS.NEGATIVE_CLICK, message)
+        return
+    end
+    self:SetDuplicateStatus(item, source, result)
 end
 
 function Gamepad:GetTargetItem()

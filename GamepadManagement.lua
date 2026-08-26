@@ -16,6 +16,7 @@ local DELETE_LIST_DIALOG = "SHOPPING_LIST_GAMEPAD_DELETE_LIST"
 local RESET_PROGRESS_DIALOG = "SHOPPING_LIST_GAMEPAD_RESET_PROGRESS"
 local BUDGET_DIALOG = "SHOPPING_LIST_GAMEPAD_BUDGET"
 local BULK_DIALOG = "SHOPPING_LIST_GAMEPAD_BULK_ADD"
+local BULK_DUPLICATE_DIALOG = "SHOPPING_LIST_GAMEPAD_BULK_DUPLICATES"
 local TRIP_DIALOG = "SHOPPING_LIST_GAMEPAD_TRIP_LISTS"
 local FILTER_DIALOG = "SHOPPING_LIST_GAMEPAD_FILTER"
 local FILTER_ORDER = { "all", "needed", "completed", "overTarget", "restricted" }
@@ -566,6 +567,59 @@ function Gamepad:InitializeBulkManagementDialog()
                 keybind = "DIALOG_NEGATIVE",
                 text = SI_DIALOG_CANCEL,
                 callback = cancelDialog(BULK_DIALOG),
+            },
+        },
+    })
+
+    ZO_Dialogs_RegisterCustomDialog(BULK_DUPLICATE_DIALOG, {
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.BASIC,
+        },
+        title = {
+            text = SI_SHOPPING_LIST_DUPLICATE_ITEM_TITLE,
+        },
+        mainText = {
+            text = function(dialog)
+                return zo_strformat(
+                    GetString(SI_SHOPPING_LIST_BULK_DUPLICATE_CONFIRM),
+                    dialog.data.duplicateCount
+                )
+            end,
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_SHOPPING_LIST_BUTTON_MERGE,
+                callback = function(dialog)
+                    self:CompleteBulkItemsFromManagement(
+                        dialog.data.entries,
+                        "merge"
+                    )
+                end,
+            },
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_SHOPPING_LIST_BUTTON_REPLACE,
+                callback = function(dialog)
+                    self:CompleteBulkItemsFromManagement(
+                        dialog.data.entries,
+                        "replace"
+                    )
+                end,
+            },
+            {
+                keybind = "DIALOG_TERTIARY",
+                text = SI_SHOPPING_LIST_BUTTON_KEEP_SEPARATE,
+                callback = function(dialog)
+                    self:CompleteBulkItemsFromManagement(
+                        dialog.data.entries,
+                        "keep"
+                    )
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
             },
         },
     })
@@ -1333,13 +1387,43 @@ function Gamepad:AddBulkItemsFromManagement()
         showError(message)
         return
     end
-    for _, entry in ipairs(entries) do
-        self.owner.data:AddItem(entry.name, entry.quantity)
+    local list = self.owner.data:GetCurrentList()
+    local duplicateCount, duplicateMessage = self.owner.data:CountDuplicateSources(
+        list.id,
+        entries
+    )
+    if duplicateCount == nil then
+        showError(duplicateMessage)
+        return
     end
-    ZO_Dialogs_ReleaseDialogOnButtonPress(BULK_DIALOG)
+    if duplicateCount > 0 then
+        releaseAndOpen(BULK_DIALOG, function()
+            ZO_Dialogs_ShowGamepadDialog(BULK_DUPLICATE_DIALOG, {
+                entries = entries,
+                duplicateCount = duplicateCount,
+            })
+        end)
+        return
+    end
+
+    self:CompleteBulkItemsFromManagement(entries, "keep", BULK_DIALOG)
+end
+
+function Gamepad:CompleteBulkItemsFromManagement(entries, duplicatePolicy, sourceDialog)
+    local list = self.owner.data:GetCurrentList()
+    local items, message = self.owner.data:AddItemsToList(
+        list.id,
+        entries,
+        duplicatePolicy
+    )
+    if not items then
+        showError(message)
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(sourceDialog or BULK_DUPLICATE_DIALOG)
     self:RefreshAfterManagement(zo_strformat(
         GetString(SI_SHOPPING_LIST_BULK_ADDED),
-        #entries
+        #items
     ))
 end
 

@@ -209,31 +209,69 @@ function addon:ToggleWindow()
     end
 end
 
-function addon:AddItem(name, quantity, itemLink, nameHash)
+function addon:AddItem(name, quantity, itemLink, nameHash, duplicatePolicy)
     return self:AddItemToList(
         self.data:GetCurrentList().id,
         name,
         quantity,
         itemLink,
-        nameHash
+        nameHash,
+        nil,
+        nil,
+        duplicatePolicy
     )
 end
 
-function addon:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
-    local item, message = self.data:AddItemToList(
+function addon:AddItemSource(source, duplicatePolicy)
+    return self:AddItemSourceToList(
+        self.data:GetCurrentList().id,
+        source,
+        duplicatePolicy
+    )
+end
+
+function addon:AddItemSourceToList(listId, source, duplicatePolicy)
+    local item, message, result = self.data:AddPreparedItemToList(
         listId,
-        name,
-        quantity,
-        itemLink,
-        nameHash,
-        note
+        source,
+        duplicatePolicy
     )
     if item then
         self.ui:Refresh()
         self.gamepad:Refresh()
         self:RefreshInventory()
     end
-    return item, message
+    return item, message, result
+end
+
+function addon:AddItemToList(
+    listId,
+    name,
+    quantity,
+    itemLink,
+    nameHash,
+    note,
+    targetMode,
+    duplicatePolicy,
+    match
+)
+    local item, message, result = self.data:AddItemToList(
+        listId,
+        name,
+        quantity,
+        itemLink,
+        nameHash,
+        note,
+        targetMode,
+        duplicatePolicy,
+        match
+    )
+    if item then
+        self.ui:Refresh()
+        self.gamepad:Refresh()
+        self:RefreshInventory()
+    end
+    return item, message, result
 end
 
 function addon:RefreshInventory()
