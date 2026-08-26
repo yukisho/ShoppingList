@@ -182,9 +182,10 @@ Fallback sharing without Shopping List
 --------------------------------------
 
 A companion add-on can show an SL3 code when Shopping List is not installed.
-SL3 preserves the list note plus each item's link, note, desired quantity,
-quantity target mode, matching rules, and maximum unit price. Shopping List
-0.18.5 can import that code after it is installed and the UI is reloaded.
+SL3 preserves the recurring-list state and list note plus each item's link,
+note, desired quantity, quantity target mode, matching rules, and maximum unit
+price. Shopping List 0.18.5 can import that code after it is installed and the
+UI is reloaded.
 
 The complete language-neutral binary contract is included in ShareFormat.txt.
 Companion add-ons should implement that contract directly rather than copying

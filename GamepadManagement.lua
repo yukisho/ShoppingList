@@ -13,6 +13,7 @@ local HELP_DIALOG = "SHOPPING_LIST_GAMEPAD_HELP"
 local RELEASE_NOTES_DIALOG = "SHOPPING_LIST_GAMEPAD_RELEASE_NOTES"
 local LIST_NAME_DIALOG = "SHOPPING_LIST_GAMEPAD_LIST_NAME"
 local DELETE_LIST_DIALOG = "SHOPPING_LIST_GAMEPAD_DELETE_LIST"
+local RESET_PROGRESS_DIALOG = "SHOPPING_LIST_GAMEPAD_RESET_PROGRESS"
 local BUDGET_DIALOG = "SHOPPING_LIST_GAMEPAD_BUDGET"
 local BULK_DIALOG = "SHOPPING_LIST_GAMEPAD_BULK_ADD"
 local TRIP_DIALOG = "SHOPPING_LIST_GAMEPAD_TRIP_LISTS"
@@ -158,6 +159,7 @@ function Gamepad:InitializeManagementDialogs()
     self:InitializeManageDialog()
     self:InitializeListNameDialog()
     self:InitializeDeleteListDialog()
+    self:InitializeResetProgressDialog()
     self:InitializeBudgetManagementDialog()
     self:InitializeBulkManagementDialog()
     self:InitializeTripManagementDialog()
@@ -197,6 +199,24 @@ function Gamepad:InitializeManageDialog()
                 function() self:OpenListNameFromManagement("duplicate") end
             ),
             actionEntry(
+                function()
+                    return GetString(self.owner.data:GetCurrentList().recurring
+                        and SI_SHOPPING_LIST_RECURRING_ON
+                        or SI_SHOPPING_LIST_RECURRING_OFF)
+                end,
+                function() self:ToggleRecurringFromManagement() end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_BUTTON_RESET_PROGRESS,
+                function() self:OpenResetProgressFromManagement() end,
+                nil,
+                function()
+                    return self.owner.data:ListHasPurchaseProgress(
+                        self.owner.data:GetCurrentList()
+                    )
+                end
+            ),
+            actionEntry(
                 SI_SHOPPING_LIST_BUTTON_DELETE,
                 function() self:OpenDeleteListFromManagement() end,
                 nil,
@@ -234,7 +254,7 @@ function Gamepad:InitializeManageDialog()
                 nil,
                 function()
                     for _, item in ipairs(self.owner.data:GetItems()) do
-                        if item.completed then
+                        if self.owner.data:IsItemComplete(item) then
                             return true
                         end
                     end
@@ -410,6 +430,39 @@ function Gamepad:InitializeDeleteListDialog()
                 keybind = "DIALOG_PRIMARY",
                 text = SI_SHOPPING_LIST_BUTTON_DELETE,
                 callback = function() self:DeleteCurrentListFromManagement() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeResetProgressDialog()
+    ZO_Dialogs_RegisterCustomDialog(RESET_PROGRESS_DIALOG, {
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.BASIC,
+        },
+        title = {
+            text = SI_SHOPPING_LIST_RESET_PROGRESS_TITLE,
+        },
+        mainText = {
+            text = function(dialog)
+                local list = self.owner.data:FindList(dialog.data.listId)
+                return zo_strformat(
+                    GetString(SI_SHOPPING_LIST_RESET_PROGRESS_CONFIRM),
+                    list and list.name or ""
+                )
+            end,
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_SHOPPING_LIST_BUTTON_RESET_PROGRESS,
+                callback = function(dialog)
+                    self:ResetProgressFromManagement(dialog.data.listId)
+                end,
             },
             {
                 keybind = "DIALOG_NEGATIVE",
@@ -1105,6 +1158,47 @@ function Gamepad:OpenDeleteListFromManagement()
     end)
 end
 
+function Gamepad:ToggleRecurringFromManagement()
+    local list = self.owner.data:GetCurrentList()
+    local ok, message = self.owner.data:SetListRecurring(
+        list.id,
+        list.recurring ~= true
+    )
+    if not ok then
+        showError(message)
+        return
+    end
+    ZO_Dialogs_ReleaseDialogOnButtonPress(MANAGE_DIALOG)
+    self:RefreshAfterManagement(GetString(list.recurring
+        and SI_SHOPPING_LIST_STATUS_RECURRING_ON
+        or SI_SHOPPING_LIST_STATUS_RECURRING_OFF))
+end
+
+function Gamepad:OpenResetProgressFromManagement()
+    local list = self.owner.data:GetCurrentList()
+    if not self.owner.data:ListHasPurchaseProgress(list) then
+        showError(GetString(SI_SHOPPING_LIST_STATUS_NO_PROGRESS_TO_RESET))
+        return
+    end
+    local listId = list.id
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(RESET_PROGRESS_DIALOG, { listId = listId })
+    end)
+end
+
+function Gamepad:ResetProgressFromManagement(listId)
+    local ok, countOrMessage, list = self.owner.data:ResetListProgress(listId)
+    if not ok then
+        showError(countOrMessage)
+        return
+    end
+    self:RefreshAfterManagement(zo_strformat(
+        GetString(SI_SHOPPING_LIST_STATUS_PROGRESS_RESET),
+        list.name,
+        countOrMessage
+    ))
+end
+
 function Gamepad:DeleteCurrentListFromManagement()
     local deletedName = self.owner.data:GetCurrentList().name
     local ok, message = self.owner.data:DeleteList(
@@ -1524,7 +1618,12 @@ function Gamepad:ImportGamepadCode()
         return
     end
 
-    local list, importMessage = self.owner.data:ImportList(decoded.name, decoded.items)
+    local list, importMessage = self.owner.data:ImportList(
+        decoded.name,
+        decoded.items,
+        decoded.note,
+        decoded.recurring
+    )
     if not list then
         showError(importMessage)
         return

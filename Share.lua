@@ -279,6 +279,10 @@ function Share.EncodeList(list)
 
     local listName = trim(list.name)
     local listNote = tostring(list.note or "")
+    if list.recurring ~= nil and type(list.recurring) ~= "boolean" then
+        return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_LIST_DATA)
+    end
+    local recurring = list.recurring == true and 1 or 0
     if listName == "" or #listName > MAX_NAME_BYTES then
         return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_LIST_NAME_LONG)
     end
@@ -292,6 +296,7 @@ function Share.EncodeList(list)
     local parts = { string.char(FORMAT_VERSION_V3) }
     appendString(parts, listName)
     appendString(parts, listNote)
+    parts[#parts + 1] = string.char(recurring)
     appendU16(parts, #list.items)
 
     for _, item in ipairs(list.items) do
@@ -391,9 +396,19 @@ local function decodeModern(payload, expectedVersion, includesTargetMode)
 
     local listName = reader:String(MAX_NAME_BYTES, false)
     local listNote = reader:String(MAX_NOTE_BYTES, true)
+    local recurring = false
+    local recurringValid = true
+    if includesTargetMode then
+        local recurringValue = reader:Byte()
+        if recurringValue == 1 then
+            recurring = true
+        elseif recurringValue ~= 0 then
+            recurringValid = false
+        end
+    end
     local itemCount = reader:U16()
     if not listName or trim(listName) == "" or listNote == nil
-        or not itemCount or itemCount > MAX_ITEMS
+        or not recurringValid or not itemCount or itemCount > MAX_ITEMS
     then
         return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_LIST_DATA)
     end
@@ -475,6 +490,7 @@ local function decodeModern(payload, expectedVersion, includesTargetMode)
     return {
         name = listName,
         note = listNote,
+        recurring = recurring,
         items = items,
         formatVersion = expectedVersion,
     }
@@ -749,7 +765,8 @@ function Share:ImportCode()
     local list, importMessage = self.owner.data:ImportList(
         decoded.name,
         decoded.items,
-        decoded.note
+        decoded.note,
+        decoded.recurring
     )
     if not list then
         self:SetImportStatus(importMessage, true)

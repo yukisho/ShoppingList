@@ -2,6 +2,7 @@ local releaseNotes = {
     en = [[
 
 Current release · 0.18.5
+• Added recurring lists and safe progress resets that preserve purchase history.
 • Added Buy More and Own Total quantity targets with inventory-driven remaining counts.
 • Added tradeable set-piece autocomplete backed by LibSets.
 • Added schema-versioned migrations and five automatic safety copies before risky data changes.
@@ -19,6 +20,7 @@ Current release · 0.18.5
     es = [[
 
 Versión actual · 0.18.5
+• Se añadieron listas recurrentes y reinicios seguros que conservan el historial de compras.
 • Se añadieron objetivos Comprar más y Total propio con cantidades pendientes según el inventario.
 • Se añadió el autocompletado de piezas de conjunto comerciables mediante LibSets.
 • Se añadieron migraciones con versión de esquema y cinco copias automáticas antes de cambios de datos arriesgados.
@@ -36,6 +38,7 @@ Versión actual · 0.18.5
     fr = [[
 
 Version actuelle · 0.18.5
+• Ajout des listes récurrentes et de réinitialisations sûres conservant l'historique d'achat.
 • Ajout des objectifs Acheter plus et Total possédé avec le calcul restant selon l'inventaire.
 • Ajout de la saisie semi-automatique des pièces d'ensemble échangeables grâce à LibSets.
 • Ajout de migrations versionnées et de cinq copies automatiques avant les modifications de données risquées.

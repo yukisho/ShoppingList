@@ -37,6 +37,7 @@ Payload body
     u8       format version; always 3
     string16 list name; 1-512 bytes
     string16 list note; 0-2000 bytes
+    u8       recurring list: 0 no, 1 yes
     u16      item count; 0-500
 
 Each item follows immediately:
@@ -76,5 +77,6 @@ Compatibility
 -------------
 
 Shopping List continues to import SL1 and SL2 codes. Imported SL1 and SL2
-quantities use Buy More behavior. New exports use SL3. Companion add-ons
+quantities use Buy More behavior and import as non-recurring lists. New exports
+use SL3. Companion add-ons
 should generate SL3 and should not generate SLB1 backup data.

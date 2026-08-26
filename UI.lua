@@ -13,6 +13,7 @@ local ROW_HEIGHT = 33
 local FOOTER_HEIGHT = 108
 local SUGGESTION_ROWS = 6
 local REMOVE_ITEM_DIALOG = "SHOPPING_LIST_CONFIRM_REMOVE_ITEM"
+local RESET_PROGRESS_DIALOG = "SHOPPING_LIST_CONFIRM_RESET_PROGRESS"
 local DONATION_RECIPIENT = "@Gravvy"
 local NORTH_AMERICAN_MEGASERVER = "NA Megaserver"
 
@@ -299,6 +300,31 @@ function UI:InitializeDialogs()
             self:RestoreOwnedMouse()
         end,
     })
+    ZO_Dialogs_RegisterCustomDialog(RESET_PROGRESS_DIALOG, {
+        title = {
+            text = SI_SHOPPING_LIST_RESET_PROGRESS_TITLE,
+        },
+        mainText = {
+            text = function(dialog)
+                return zo_strformat(
+                    GetString(SI_SHOPPING_LIST_RESET_PROGRESS_CONFIRM),
+                    dialog.data.listName
+                )
+            end,
+        },
+        buttons = {
+            {
+                text = SI_SHOPPING_LIST_BUTTON_RESET_PROGRESS,
+                callback = function(dialog)
+                    self:ResetListProgress(dialog.data.listId)
+                end,
+            },
+            { text = SI_DIALOG_CANCEL },
+        },
+        finishedCallback = function()
+            self:RestoreOwnedMouse()
+        end,
+    })
 end
 
 function UI:CreateListControls()
@@ -505,6 +531,28 @@ function UI:CreateListDialog()
     self.listDialogNoteBackdrop = noteBackdrop
     self.listDialogNote = noteEdit
 
+    local recurring = makeButton(
+        dialog,
+        GetString(SI_SHOPPING_LIST_RECURRING_OFF),
+        180
+    )
+    recurring:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 340)
+    recurring:SetHandler("OnClicked", function()
+        self:ToggleCurrentListRecurring()
+    end)
+    self.listDialogRecurring = recurring
+
+    local resetProgress = makeButton(
+        dialog,
+        GetString(SI_SHOPPING_LIST_BUTTON_RESET_PROGRESS),
+        180
+    )
+    resetProgress:SetAnchor(LEFT, recurring, RIGHT, 8, 0)
+    resetProgress:SetHandler("OnClicked", function()
+        self:ConfirmResetListProgress()
+    end)
+    self.listDialogResetProgress = resetProgress
+
     local duplicate = makeButton(dialog, GetString(SI_SHOPPING_LIST_BUTTON_DUPLICATE), 90)
     duplicate:SetAnchor(BOTTOMLEFT, dialog, BOTTOMLEFT, 18, -16)
     duplicate:SetHidden(true)
@@ -535,6 +583,7 @@ function UI:UpdateListMoveButtons()
 end
 
 function UI:UpdateListArchiveButtons()
+    local list = self.owner.data:GetCurrentList()
     self.listDialogArchive:SetEnabled(true)
     self.listDialogUndo:SetEnabled(self.owner.data:CanUndoDeletion())
     local completed = 0
@@ -544,9 +593,64 @@ function UI:UpdateListArchiveButtons()
         end
     end
     self.listDialogClearCompleted:SetEnabled(completed > 0)
+    self.listDialogRecurring:SetText(GetString(list.recurring
+        and SI_SHOPPING_LIST_RECURRING_ON
+        or SI_SHOPPING_LIST_RECURRING_OFF))
+    self.listDialogResetProgress:SetEnabled(
+        self.owner.data:ListHasPurchaseProgress(list)
+    )
     self.listDialogArchived:SetText(zo_strformat(
         GetString(SI_SHOPPING_LIST_ARCHIVED_COUNT),
         #self.owner.data:GetArchivedLists()
+    ))
+end
+
+function UI:ToggleCurrentListRecurring()
+    local list = self.owner.data:GetCurrentList()
+    local ok, message = self.owner.data:SetListRecurring(
+        list.id,
+        list.recurring ~= true
+    )
+    if not ok then
+        self:SetStatus(message, true)
+        return
+    end
+    self.listSignature = nil
+    self:UpdateListArchiveButtons()
+    self:Refresh()
+    self.owner.gamepad:Refresh()
+    self:SetStatus(GetString(list.recurring
+        and SI_SHOPPING_LIST_STATUS_RECURRING_ON
+        or SI_SHOPPING_LIST_STATUS_RECURRING_OFF))
+end
+
+function UI:ConfirmResetListProgress()
+    local list = self.owner.data:GetCurrentList()
+    if not self.owner.data:ListHasPurchaseProgress(list) then
+        self:SetStatus(GetString(SI_SHOPPING_LIST_STATUS_NO_PROGRESS_TO_RESET), true)
+        return
+    end
+    ZO_Dialogs_ShowDialog(RESET_PROGRESS_DIALOG, {
+        listId = list.id,
+        listName = list.name,
+    })
+end
+
+function UI:ResetListProgress(listId)
+    local ok, countOrMessage, list = self.owner.data:ResetListProgress(listId)
+    if not ok then
+        self:SetStatus(countOrMessage, true)
+        return
+    end
+    self:CloseListDialog()
+    self.offset = 0
+    self:Refresh()
+    self.owner.gamepad:Refresh()
+    self.owner:RefreshInventory()
+    self:SetStatus(zo_strformat(
+        GetString(SI_SHOPPING_LIST_STATUS_PROGRESS_RESET),
+        list.name,
+        countOrMessage
     ))
 end
 
@@ -728,6 +832,7 @@ function UI:RefreshListSelector()
             list.name,
             list.note or "",
             tostring(list.tripActive),
+            tostring(list.recurring),
             tostring(tripEnabled),
         }, ":")
     end
@@ -742,6 +847,12 @@ function UI:RefreshListSelector()
                 GetString(SI_SHOPPING_LIST_NOTE_MARKER),
                 list.name
             ) or list.name
+            if list.recurring then
+                displayName = zo_strformat(
+                    GetString(SI_SHOPPING_LIST_RECURRING_MARKER),
+                    displayName
+                )
+            end
             local label = tripEnabled and zo_strformat(
                 GetString(list.tripActive
                     and SI_SHOPPING_LIST_TRIP_LIST_ACTIVE
@@ -757,6 +868,12 @@ function UI:RefreshListSelector()
         GetString(SI_SHOPPING_LIST_NOTE_MARKER),
         current.name
     ) or current.name
+    if current.recurring then
+        currentName = zo_strformat(
+            GetString(SI_SHOPPING_LIST_RECURRING_MARKER),
+            currentName
+        )
+    end
     local selectedLabel = tripEnabled and zo_strformat(
         GetString(current.tripActive
             and SI_SHOPPING_LIST_TRIP_LIST_ACTIVE
@@ -798,6 +915,8 @@ function UI:OpenListDialog(mode)
     self.listDialogBulk:SetHidden(mode ~= "rename")
     self.listDialogUndo:SetHidden(mode ~= "rename")
     self.listDialogClearCompleted:SetHidden(mode ~= "rename")
+    self.listDialogRecurring:SetHidden(mode ~= "rename")
+    self.listDialogResetProgress:SetHidden(mode ~= "rename")
     self.listDialogNoteLabel:SetHidden(mode == "delete")
     self.listDialogNoteBackdrop:SetHidden(mode == "delete")
     self.listDialog:SetHeight(mode == "delete" and 290 or 420)

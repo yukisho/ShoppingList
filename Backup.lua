@@ -283,6 +283,8 @@ function Backup.GetSafetyLabel(snapshot)
         kindId = SI_SHOPPING_LIST_SAFETY_KIND_RESTORE
     elseif snapshot.kind == "pre_legacy_recovery" then
         kindId = SI_SHOPPING_LIST_SAFETY_KIND_LEGACY
+    elseif snapshot.kind == "pre_progress_reset" then
+        kindId = SI_SHOPPING_LIST_SAFETY_KIND_PROGRESS_RESET
     end
     return zo_strformat(
         GetString(SI_SHOPPING_LIST_SAFETY_ENTRY),

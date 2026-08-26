@@ -366,6 +366,12 @@ function Gamepad:Refresh(force)
         GetString(SI_SHOPPING_LIST_NOTE_MARKER),
         current.name
     ) or current.name
+    if current.recurring then
+        currentName = zo_strformat(
+            GetString(SI_SHOPPING_LIST_RECURRING_MARKER),
+            currentName
+        )
+    end
     if self.owner.data:IsMultiListTripEnabled() then
         self.listName:SetText(zo_strformat(
             GetString(SI_SHOPPING_LIST_GAMEPAD_TRIP_HEADING),

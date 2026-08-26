@@ -48,6 +48,8 @@ local defaults = {
             totalSpent = 0,
             transactionSpent = 0,
             tripActive = true,
+            recurring = false,
+            resetCount = 0,
         },
     },
     settings = {
@@ -328,6 +330,12 @@ function Data:Normalize()
             list.note = normalizeNote(list.note)
             list.items = type(list.items) == "table" and list.items or {}
             list.tripActive = list.tripActive == true
+            list.recurring = list.recurring == true
+            list.resetCount = math.max(0, math.floor(tonumber(list.resetCount) or 0))
+            list.lastResetAt = math.max(0, math.floor(tonumber(list.lastResetAt) or 0))
+            if list.lastResetAt == 0 then
+                list.lastResetAt = nil
+            end
             if archived then
                 list.archivedAt = tonumber(list.archivedAt) or GetTimeStamp()
             else
@@ -555,6 +563,9 @@ local function validateList(list, archived, listIds, itemIds, totals)
         or not optionalWholeNumber(list.transactionSpent, 0, MAX_SAFE_INTEGER)
         or not optionalWholeNumber(list.budget, 1, ShoppingListModel.MAX_PRICE)
         or not optionalBoolean(list.tripActive)
+        or not optionalBoolean(list.recurring)
+        or not optionalWholeNumber(list.resetCount, 0, MAX_SAFE_INTEGER)
+        or not optionalWholeNumber(list.lastResetAt, 0, MAX_SAFE_INTEGER)
     then
         return false
     end
@@ -869,6 +880,9 @@ local function getContentCounts(source)
             or (tonumber(list.totalSpent) or 0) > 0
             or (tonumber(list.transactionSpent) or 0) > 0
             or (tonumber(list.budget) or 0) > 0
+            or list.recurring == true
+            or (tonumber(list.resetCount) or 0) > 0
+            or (tonumber(list.lastResetAt) or 0) > 0
         then
             counts.meaningfulListCount = counts.meaningfulListCount + 1
         end
@@ -1527,6 +1541,8 @@ function Data:AddList(name, note)
         transactionSpent = 0,
         budget = nil,
         tripActive = self:IsMultiListTripEnabled(),
+        recurring = false,
+        resetCount = 0,
     }
     self.saved.nextListId = self.saved.nextListId + 1
     self.saved.lists[#self.saved.lists + 1] = list
@@ -1534,7 +1550,7 @@ function Data:AddList(name, note)
     return list
 end
 
-function Data:ImportList(name, items, note)
+function Data:ImportList(name, items, note, recurring)
     name = zo_strtrim(name or "")
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_NO_NAME)
@@ -1550,6 +1566,9 @@ function Data:ImportList(name, items, note)
     end
     if #(note or "") > ShoppingListModel.MAX_NOTE_LENGTH then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    if recurring ~= nil and type(recurring) ~= "boolean" then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_RECURRING)
     end
     if #items > ShoppingListModel.MAX_ITEMS_PER_LIST then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_TOO_MANY_ITEMS)
@@ -1626,6 +1645,7 @@ function Data:ImportList(name, items, note)
     if not list then
         return nil, createdOrMessage
     end
+    list.recurring = recurring == true
     return list
 end
 
@@ -1664,6 +1684,8 @@ function Data:DuplicateList(id, name, note)
         transactionSpent = 0,
         budget = source.budget,
         tripActive = self:IsMultiListTripEnabled(),
+        recurring = source.recurring == true,
+        resetCount = 0,
     }
     self.saved.nextListId = self.saved.nextListId + 1
 
@@ -1749,6 +1771,68 @@ function Data:UpdateListBudget(id, value)
     budget = budget or 0
     list.budget = budget > 0 and budget or nil
     return true
+end
+
+function Data:SetListRecurring(id, recurring)
+    local list = self:FindList(id)
+    if not list then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if type(recurring) ~= "boolean" then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_RECURRING)
+    end
+    list.recurring = recurring
+    return true, list
+end
+
+function Data:ListHasPurchaseProgress(list)
+    list = type(list) == "table" and list or self:FindList(list)
+    if not list then
+        return false
+    end
+    for _, item in ipairs(list.items) do
+        if (tonumber(item.purchased) or 0) > 0
+            or (self:GetTargetMode(item) == "buy" and item.completed == true)
+        then
+            return true
+        end
+    end
+    return false
+end
+
+function Data:ResetListProgress(id)
+    local list = self:FindList(id)
+    if not list then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if not self:ListHasPurchaseProgress(list) then
+        return false, GetString(SI_SHOPPING_LIST_STATUS_NO_PROGRESS_TO_RESET)
+    end
+
+    local snapshotted, snapshotMessage = self:CreateSafetySnapshot(
+        "pre_progress_reset"
+    )
+    if not snapshotted then
+        return false, snapshotMessage
+    end
+
+    local resetItems = 0
+    for _, item in ipairs(list.items) do
+        if (tonumber(item.purchased) or 0) > 0
+            or (self:GetTargetMode(item) == "buy" and item.completed == true)
+        then
+            resetItems = resetItems + 1
+        end
+        item.purchased = 0
+        if self:GetTargetMode(item) == "own" then
+            item.completed = self:GetOwnedQuantity(item) >= item.desired
+        else
+            item.completed = false
+        end
+    end
+    list.resetCount = math.max(0, tonumber(list.resetCount) or 0) + 1
+    list.lastResetAt = GetTimeStamp()
+    return true, resetItems, list
 end
 
 function Data:PushDeletedAction(action)
