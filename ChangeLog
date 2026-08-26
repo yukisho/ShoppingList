@@ -1,4 +1,5 @@
 0.18.5
+• Restored reliable automatic opening beside guild traders by applying missing legacy setting defaults and listening to both trading house events and scene state changes.
 • Separated full guild store transaction spending from the cost allocated to quantities that shopping list entries actually needed; list budgets now use full transaction spending.
 • Added bounded transaction and item purchase histories while preserving lifetime quantities and spending totals.
 • Added backup size and health reporting before SLB1 codes approach their hard limit.

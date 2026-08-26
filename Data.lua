@@ -232,6 +232,26 @@ function Data:Normalize()
 
     local settings = self.saved.settings or {}
     self.saved.settings = settings
+    if settings.autoOpen == nil then
+        settings.autoOpen = true
+    else
+        settings.autoOpen = settings.autoOpen == true
+    end
+    if settings.closeWithStore == nil then
+        settings.closeWithStore = true
+    else
+        settings.closeWithStore = settings.closeWithStore == true
+    end
+    if settings.showCompleted == nil then
+        settings.showCompleted = true
+    else
+        settings.showCompleted = settings.showCompleted == true
+    end
+    if settings.announcePurchases == nil then
+        settings.announcePurchases = true
+    else
+        settings.announcePurchases = settings.announcePurchases == true
+    end
     if settings.filterMigrated ~= true then
         settings.itemFilter = settings.showCompleted == false and "needed" or "all"
         settings.filterMigrated = true

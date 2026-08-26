@@ -90,37 +90,71 @@ function addon:Initialize()
     end
 end
 
+function addon:HandleStoreOpened()
+    self.storeOpen = true
+    if self.storeOpenQueued then
+        return
+    end
+    self.storeOpenQueued = true
+    zo_callLater(function()
+        self.storeOpenQueued = false
+        if not self.storeOpen then
+            return
+        end
+        if self.data:GetSettings().autoOpen then
+            if IsInGamepadPreferredMode() then
+                self.gamepad:ShowForStore()
+            else
+                self.ui:ShowForStore()
+            end
+        else
+            self.ui:Refresh()
+            self.gamepad:Refresh()
+        end
+    end, 100)
+end
+
+function addon:HandleStoreClosed()
+    if not self.storeOpen then
+        return
+    end
+    self.storeOpen = false
+    self.storeOpenQueued = false
+    self.ui:HideForStore()
+    self.gamepad:HideForStore()
+    self.ui:Refresh()
+    self.gamepad:Refresh()
+end
+
 function addon:RegisterEvents()
     EVENT_MANAGER:RegisterForEvent(
         "GravvyShoppingList_OpenStore",
         EVENT_OPEN_TRADING_HOUSE,
-        function()
-            self.storeOpen = true
-            zo_callLater(function()
-                if self.data:GetSettings().autoOpen then
-                    if IsInGamepadPreferredMode() then
-                        self.gamepad:ShowForStore()
-                    else
-                        self.ui:ShowForStore()
-                    end
-                else
-                    self.ui:Refresh()
-                    self.gamepad:Refresh()
-                end
-            end, 100)
-        end
+        function() self:HandleStoreOpened() end
     )
     EVENT_MANAGER:RegisterForEvent(
         "GravvyShoppingList_CloseStore",
         EVENT_CLOSE_TRADING_HOUSE,
-        function()
-            self.storeOpen = false
-            self.ui:HideForStore()
-            self.gamepad:HideForStore()
-            self.ui:Refresh()
-            self.gamepad:Refresh()
-        end
+        function() self:HandleStoreClosed() end
     )
+
+    local registeredScenes = {}
+    for _, scene in pairs({
+        TRADING_HOUSE_SCENE,
+        GAMEPAD_TRADING_HOUSE_SCENE,
+        TRADING_HOUSE_GAMEPAD_SCENE,
+    }) do
+        if scene and scene.RegisterCallback and not registeredScenes[scene] then
+            registeredScenes[scene] = true
+            scene:RegisterCallback("StateChange", function(_, newState)
+                if newState == SCENE_SHOWING or newState == SCENE_SHOWN then
+                    self:HandleStoreOpened()
+                elseif newState == SCENE_HIDING or newState == SCENE_HIDDEN then
+                    self:HandleStoreClosed()
+                end
+            end)
+        end
+    end
 end
 
 function addon:RegisterCommands()
