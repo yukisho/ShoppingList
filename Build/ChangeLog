@@ -1,4 +1,7 @@
 0.18.7
+• Reorganized runtime code into Core, Features, Integrations, and shared, keyboard, and gamepad UI modules without changing saved-variable identities.
+• Added per-list item searching plus sorting by name, quantity, owned quantity, completion, price target, and date added in keyboard and gamepad interfaces.
+• Added persistent favorite and pinned lists plus optional list categories; pinned lists appear first while preserving manual list order.
 
 0.18.5
 • Added duplicate detection for keyboard, gamepad, linked item, and bulk adds with Merge, Replace, and Keep Separate choices.

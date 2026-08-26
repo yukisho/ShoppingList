@@ -1,7 +1,12 @@
 local releaseNotes = {
     en = [[
 
-Current release · 0.18.5
+Current release · 0.18.7
+• Reorganized the add-on into clear core, feature, integration, keyboard, gamepad, and shared UI modules.
+• Added per-list item searching and sorting by name, quantity, ownership, completion, price target, and date added.
+• Added favorite and pinned lists plus optional list categories.
+
+0.18.5
 • Added recurring lists and safe progress resets that preserve purchase history.
 • Added Buy More and Own Total quantity targets with inventory-driven remaining counts.
 • Added tradeable set-piece autocomplete backed by LibSets.
@@ -19,7 +24,12 @@ Current release · 0.18.5
 • Added inventory-aware quantities, notes, full SLB1 backup, accessibility settings, chat-link actions, and Spanish and French translations.]],
     es = [[
 
-Versión actual · 0.18.5
+Versión actual · 0.18.7
+• Se reorganizó el complemento en módulos claros de núcleo, funciones, integraciones e interfaz para teclado, mando y elementos compartidos.
+• Se añadieron búsquedas y ordenación por lista según nombre, cantidad, posesión, estado, precio objetivo y fecha de adición.
+• Se añadieron listas favoritas y fijadas, además de categorías opcionales.
+
+0.18.5
 • Se añadieron listas recurrentes y reinicios seguros que conservan el historial de compras.
 • Se añadieron objetivos Comprar más y Total propio con cantidades pendientes según el inventario.
 • Se añadió el autocompletado de piezas de conjunto comerciables mediante LibSets.
@@ -37,7 +47,12 @@ Versión actual · 0.18.5
 • Se añadieron cantidades de inventario, notas, copia completa SLB1, accesibilidad, acciones de enlaces del chat y traducciones al español y francés.]],
     fr = [[
 
-Version actuelle · 0.18.5
+Version actuelle · 0.18.7
+• Réorganisation de l'extension en modules clairs pour le cœur, les fonctions, les intégrations et les interfaces clavier, manette et partagées.
+• Ajout de la recherche par liste et du tri par nom, quantité, possession, état, prix cible et date d'ajout.
+• Ajout des listes favorites et épinglées ainsi que de catégories facultatives.
+
+0.18.5
 • Ajout des listes récurrentes et de réinitialisations sûres conservant l'historique d'achat.
 • Ajout des objectifs Acheter plus et Total possédé avec le calcul restant selon l'inventaire.
 • Ajout de la saisie semi-automatique des pièces d'ensemble échangeables grâce à LibSets.

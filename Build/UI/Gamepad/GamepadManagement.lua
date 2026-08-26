@@ -20,6 +20,7 @@ local BULK_DUPLICATE_DIALOG = "SHOPPING_LIST_GAMEPAD_BULK_DUPLICATES"
 local TRIP_DIALOG = "SHOPPING_LIST_GAMEPAD_TRIP_LISTS"
 local FILTER_DIALOG = "SHOPPING_LIST_GAMEPAD_FILTER"
 local SEARCH_SORT_DIALOG = "SHOPPING_LIST_GAMEPAD_SEARCH_SORT"
+local SESSION_DIALOG = "SHOPPING_LIST_GAMEPAD_SESSION_SUMMARY"
 local FILTER_ORDER = { "all", "needed", "completed", "overTarget", "restricted" }
 
 local function showError(message)
@@ -167,6 +168,7 @@ function Gamepad:InitializeManagementDialogs()
     self:InitializeTripManagementDialog()
     self:InitializeFilterManagementDialog()
     self:InitializeSearchSortDialog()
+    self:InitializeSessionSummaryDialog()
     self:InitializeEditDialog()
     self:InitializeArchivesDialog()
     self:InitializeShareDialog()
@@ -311,6 +313,10 @@ function Gamepad:InitializeManageDialog()
             actionEntry(
                 SI_SHOPPING_LIST_BUTTON_TRIP,
                 function() self:OpenTripFromManagement() end
+            ),
+            actionEntry(
+                SI_SHOPPING_LIST_SESSION_TITLE,
+                function() self:OpenSessionSummaryFromManagement() end
             ),
             actionEntry(
                 SI_SHOPPING_LIST_GAMEPAD_EDIT_MATCHING,
@@ -783,6 +789,47 @@ function Gamepad:InitializeSearchSortDialog()
     })
 end
 
+function Gamepad:InitializeSessionSummaryDialog()
+    ZO_Dialogs_RegisterCustomDialog(SESSION_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.PARAMETRIC,
+        },
+        setup = function(dialog)
+            dialog.info.parametricList = self:BuildSessionSummaryEntries()
+            dialog:setupFunc()
+        end,
+        title = {
+            text = SI_SHOPPING_LIST_SESSION_TITLE,
+        },
+        mainText = {
+            text = function()
+                local overview = self.owner.session:GetOverviewText()
+                local lists = self.owner.session:GetUpdatedListsText()
+                return lists ~= "" and (overview .. "\n" .. lists) or overview
+            end,
+        },
+        parametricList = {},
+        buttons = {
+            {
+                keybind = "DIALOG_SECONDARY",
+                text = SI_SHOPPING_LIST_SESSION_RESET,
+                callback = function()
+                    self.owner.session:Reset()
+                    releaseAndOpen(SESSION_DIALOG, function()
+                        ZO_Dialogs_ShowGamepadDialog(SESSION_DIALOG)
+                    end)
+                end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_GAMEPAD_BACK_OPTION,
+                callback = cancelDialog(SESSION_DIALOG),
+            },
+        },
+    })
+end
+
 function Gamepad:InitializeEditDialog()
     local qualityModes = {
         { label = GetString(SI_SHOPPING_LIST_CHOICE_ANY), value = "any" },
@@ -1198,7 +1245,13 @@ function Gamepad:InitializeHelpDialogs()
             text = SI_SHOPPING_LIST_HELP_TITLE,
         },
         mainText = {
-            text = SI_SHOPPING_LIST_HELP_CONTENT,
+            text = function()
+                return GetString(SI_SHOPPING_LIST_HELP_LIST_VIEWS)
+                    .. "\n\n"
+                    .. GetString(SI_SHOPPING_LIST_HELP_DUPLICATES)
+                    .. "\n\n"
+                    .. GetString(SI_SHOPPING_LIST_HELP_CONTENT)
+            end,
         },
         buttons = {
             {
@@ -1670,6 +1723,24 @@ function Gamepad:BuildTripManagementEntries()
         )
     end
     return entries
+end
+
+function Gamepad:BuildSessionSummaryEntries()
+    local entries = {}
+    local transactions = self.owner.session.transactions or {}
+    for index = #transactions, 1, -1 do
+        entries[#entries + 1] = actionEntry(
+            self.owner.session:GetTransactionText(transactions[index]),
+            function() end
+        )
+    end
+    return entries
+end
+
+function Gamepad:OpenSessionSummaryFromManagement()
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(SESSION_DIALOG)
+    end)
 end
 
 function Gamepad:OpenEditDialogFromManagement()

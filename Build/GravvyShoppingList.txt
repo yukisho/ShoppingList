@@ -3,7 +3,7 @@
 ## Author: Gravvy
 ## Version: 0.18.7
 ## APIVersion: 101051
-## AddOnVersion: 31
+## AddOnVersion: 32
 ## DependsOn: LibAddonMenu-2.0>=43 LibMainMenu-2.0>=40500 LibSets>=0009000
 ## OptionalDependsOn: AwesomeGuildStore LibCustomMenu ShoppingList
 ## SavedVariables: ShoppingList_Data ShoppingList_BackupData
@@ -42,6 +42,7 @@ UI/Gamepad/Gamepad.xml
 UI/Gamepad/GamepadManagement.lua
 UI/Shared/Help.lua
 Features/History.lua
+Features/SessionSummary.lua
 Features/ListTools.lua
 Integrations/MainMenu.lua
 Core/Matcher.lua

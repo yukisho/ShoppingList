@@ -10,7 +10,7 @@ local MAX_HEIGHT = 900
 local MAX_ROWS = 24
 local ROW_TOP = 123
 local ROW_HEIGHT = 33
-local FOOTER_HEIGHT = 132
+local FOOTER_HEIGHT = 138
 local SUGGESTION_ROWS = 6
 local REMOVE_ITEM_DIALOG = "SHOPPING_LIST_CONFIRM_REMOVE_ITEM"
 local RESET_PROGRESS_DIALOG = "SHOPPING_LIST_CONFIRM_RESET_PROGRESS"
@@ -194,11 +194,11 @@ function UI:Initialize()
 
     self.page = makeLabel(window, "ZoFontGameSmall")
     self.page:SetHorizontalAlignment(TEXT_ALIGN_CENTER)
-    self.page:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, -14, -104)
+    self.page:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, -14, -110)
     self.page:SetDimensions(160, 20)
 
     local filterContainer, filterCombo = makeCombo(window, "ItemFilter", 105)
-    filterContainer:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 14, -78)
+    filterContainer:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 14, -84)
     local filterChoices = {
         { label = GetString(SI_SHOPPING_LIST_FILTER_ALL), value = "all" },
         { label = GetString(SI_SHOPPING_LIST_FILTER_NEEDED), value = "needed" },
@@ -253,8 +253,8 @@ function UI:Initialize()
     self.sortCombo = sortCombo
 
     local searchBackdrop, searchEdit = makeEdit(window, 80)
-    searchBackdrop:SetAnchor(LEFT, sortContainer, RIGHT, 5, 0)
-    searchBackdrop:SetAnchor(RIGHT, window, RIGHT, -14, 0)
+    searchBackdrop:SetAnchor(BOTTOMLEFT, sortContainer, BOTTOMRIGHT, 5, 0)
+    searchBackdrop:SetAnchor(BOTTOMRIGHT, window, BOTTOMRIGHT, -14, -84)
     searchEdit:SetDefaultText(GetString(SI_SHOPPING_LIST_SEARCH_PLACEHOLDER))
     searchEdit:SetMaxInputChars(ShoppingListModel.MAX_NAME_LENGTH)
     searchEdit:SetHandler("OnTextChanged", function()
@@ -683,6 +683,20 @@ function UI:CreateListDialog()
     end)
     self.listDialogResetProgress = resetProgress
 
+    local session = makeButton(
+        dialog,
+        GetString(SI_SHOPPING_LIST_BUTTON_SESSION),
+        180
+    )
+    session:SetAnchor(LEFT, resetProgress, RIGHT, 8, 0)
+    session:SetHandler("OnClicked", function()
+        self:CloseListDialog()
+        if self.owner.session then
+            self.owner.session:Open()
+        end
+    end)
+    self.listDialogSession = session
+
     local duplicate = makeButton(dialog, GetString(SI_SHOPPING_LIST_BUTTON_DUPLICATE), 90)
     duplicate:SetAnchor(BOTTOMLEFT, dialog, BOTTOMLEFT, 18, -16)
     duplicate:SetHidden(true)
@@ -868,6 +882,9 @@ function UI:ArchiveCurrentList()
     end
     if self.owner.history then
         self.owner.history:Hide()
+    end
+    if self.owner.session then
+        self.owner.session:Hide()
     end
     self:CloseBudgetDialog()
     self:CloseListDialog()
@@ -1121,6 +1138,7 @@ function UI:OpenListDialog(mode)
     self.listDialogClearCompleted:SetHidden(mode ~= "rename")
     self.listDialogRecurring:SetHidden(mode ~= "rename")
     self.listDialogResetProgress:SetHidden(mode ~= "rename")
+    self.listDialogSession:SetHidden(mode ~= "rename")
     self.listDialogFavorite:SetHidden(mode ~= "rename")
     self.listDialogPinned:SetHidden(mode ~= "rename")
     self.listDialogNoteLabel:SetHidden(mode == "delete")
@@ -1616,7 +1634,7 @@ function UI:Refresh()
     local sort, ascending = self.owner.data:GetItemSort()
     self.sortCombo:SetSelectedItem(
         self.sortLabels[sort .. ":" .. tostring(ascending)]
-            or self.sortLabels.added
+            or self.sortLabels["added:true"]
     )
     local search = self.owner.data:GetItemSearch()
     if not self.searchEdit:HasFocus() and self.searchEdit:GetText() ~= search then
@@ -1747,6 +1765,12 @@ function UI:Refresh()
         ))
     else
         self.page:SetText("")
+    end
+    if self.owner.session
+        and self.owner.session.window
+        and not self.owner.session.window:IsHidden()
+    then
+        self.owner.session:Refresh()
     end
 end
 
@@ -1937,6 +1961,9 @@ function UI:Hide()
     end
     if self.owner.history then
         self.owner.history:Hide()
+    end
+    if self.owner.session then
+        self.owner.session:Hide()
     end
     if self.owner.archive then
         self.owner.archive:Hide()

@@ -108,7 +108,11 @@ function Help:ShowSection(section)
         and SI_SHOPPING_LIST_HELP_CONTENT
         or SI_SHOPPING_LIST_RELEASE_NOTES_CONTENT)
     if showingHelp then
-        content = GetString(SI_SHOPPING_LIST_HELP_DUPLICATES) .. "\n\n" .. content
+        content = GetString(SI_SHOPPING_LIST_HELP_LIST_VIEWS)
+            .. "\n\n"
+            .. GetString(SI_SHOPPING_LIST_HELP_DUPLICATES)
+            .. "\n\n"
+            .. content
     end
     self.content:SetText(content)
     self.gettingStarted:SetEnabled(not showingHelp)

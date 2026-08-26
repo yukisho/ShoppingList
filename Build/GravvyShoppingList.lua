@@ -56,6 +56,8 @@ function addon:Initialize()
     self.inventory:Initialize()
     self.history = ShoppingListHistory:New(self)
     self.history:Initialize()
+    self.session = ShoppingListSessionSummary:New(self)
+    self.session:Initialize()
     self.archive = ShoppingListArchive:New(self)
     self.archive:Initialize()
     self.share = ShoppingListShare:New(self)
@@ -336,7 +338,10 @@ function addon:RecordPurchase(itemLink, itemName, quantity, purchase)
     end
 
     purchase.quantity = purchase.quantity or quantity
-    self.data:RecordPurchaseTransaction(changes, purchase)
+    local transaction = self.data:RecordPurchaseTransaction(changes, purchase)
+    if transaction and self.session then
+        self.session:RecordTransaction(transaction)
+    end
     for _, list in ipairs(shoppingLists) do
         local transactionSpent = tonumber(list.transactionSpent)
             or tonumber(list.totalSpent) or 0
