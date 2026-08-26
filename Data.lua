@@ -101,6 +101,43 @@ local function deepCopy(value, seen)
     return copy
 end
 
+local STATE_KEYS = {
+    "schemaVersion",
+    "nextItemId",
+    "nextListId",
+    "nextTransactionId",
+    "selectedListId",
+    "lists",
+    "archivedLists",
+    "deletedActions",
+    "purchaseTransactions",
+    "recovery",
+    "legacyRecovery",
+    "language",
+    "settings",
+    "items",
+}
+
+local function extractState(source)
+    local state = {}
+    if type(source) ~= "table" then
+        return state
+    end
+    for _, key in ipairs(STATE_KEYS) do
+        local value = source[key]
+        if value ~= nil then
+            state[key] = deepCopy(value)
+        end
+    end
+    return state
+end
+
+local function applyState(target, source)
+    for _, key in ipairs(STATE_KEYS) do
+        target[key] = deepCopy(source[key])
+    end
+end
+
 local function copyPersistable(value, active)
     local valueType = type(value)
     if valueType == "nil" or valueType == "boolean" or valueType == "string" then
@@ -133,15 +170,6 @@ local function copyPersistable(value, active)
 
     active[value] = nil
     return copy, true
-end
-
-local function replaceTable(target, source)
-    for key in pairs(target) do
-        target[key] = nil
-    end
-    for key, value in pairs(source) do
-        target[key] = value
-    end
 end
 
 local function readLinkDetails(itemLink)
@@ -771,7 +799,7 @@ local function validateCandidate(candidate)
 end
 
 function Data:PrepareCandidate(source)
-    local candidateSaved = deepCopy(source)
+    local candidateSaved = extractState(source)
     if type(candidateSaved) ~= "table" then
         return nil, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
     end
@@ -807,7 +835,7 @@ function Data:PrepareCandidate(source)
 end
 
 function Data:GetPersistableData(source)
-    local snapshot = copyPersistable(source or self.saved)
+    local snapshot = copyPersistable(extractState(source or self.saved))
     if not snapshot then
         return nil
     end
@@ -1082,11 +1110,11 @@ function Data:Migrate()
         end
     end
 
-    local candidate, message = self:PrepareCandidate(self.saved)
+    local candidate, message = self:PrepareCandidate(extractState(self.saved))
     if not candidate then
         return false, message
     end
-    replaceTable(self.saved, candidate)
+    applyState(self.saved, candidate)
     return true
 end
 
@@ -1167,7 +1195,7 @@ function Data:RecoverLegacyData()
         return false
     end
 
-    local candidate = deepCopy(self.saved)
+    local candidate = extractState(self.saved)
     local working = setmetatable({ saved = candidate }, { __index = self })
     local removeDefault = isPristineDefault(candidate)
     if removeDefault then
@@ -1228,7 +1256,7 @@ function Data:RecoverLegacyData()
         self.legacyRecoveryError = prepareMessage
         return false
     end
-    replaceTable(self.saved, prepared)
+    applyState(self.saved, prepared)
     self.legacyRecoveredCount = recoveredCount
     return true
 end
@@ -1788,28 +1816,19 @@ function Data:RestoreBackup(snapshot)
         return false, snapshotMessage
     end
 
-    local previous = deepCopy(self.saved)
-    local settingsReference = self.saved.settings
+    local previous = extractState(self.saved)
     local recoveryReference = self.saved.recovery
     local legacyRecoveryReference = self.saved.legacyRecovery
     local function apply(restored)
         restored = deepCopy(restored)
-        local restoredSettings = restored.settings or {}
-        restored.settings = nil
         restored.recovery = recoveryReference
         restored.legacyRecovery = legacyRecoveryReference
-        replaceTable(self.saved, restored)
-        replaceTable(settingsReference, restoredSettings)
-        self.saved.settings = settingsReference
+        applyState(self.saved, restored)
     end
 
     local ok = pcall(apply, candidate)
     if not ok then
-        local previousSettings = previous.settings or {}
-        previous.settings = nil
-        replaceTable(self.saved, previous)
-        replaceTable(settingsReference, previousSettings)
-        self.saved.settings = settingsReference
+        applyState(self.saved, previous)
         return false, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
     end
     return true
