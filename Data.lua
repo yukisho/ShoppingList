@@ -6,6 +6,7 @@ local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = ShoppingListModel.MAX_NOTE_LENGTH
 local CURRENT_SCHEMA_VERSION = 3
 local MAX_RECOVERY_SNAPSHOTS = 5
+local MAX_EXTERNAL_SNAPSHOTS = 10
 local MAX_BACKUP_LISTS = ShoppingListModel.MAX_LISTS
 local MAX_BACKUP_ITEMS = 100000
 local MAX_HISTORY_PER_ITEM = ShoppingListModel.MAX_PURCHASE_HISTORY
@@ -176,10 +177,26 @@ function Data:New()
         defaults,
         GetWorldName()
     )
+    data.externalBackups = ZO_SavedVars:NewAccountWide(
+        "ShoppingList_BackupData",
+        1,
+        nil,
+        { nextId = 1, snapshots = {} },
+        GetWorldName()
+    )
+    local previousExternal = data:GetLatestExternalSnapshot()
+    local startupExternal, backupMessage = data:CreateExternalSnapshot(
+        "startup",
+        data.saved
+    )
+    if not startupExternal then
+        return nil, backupMessage
+    end
     local ok, message = data:Migrate()
     if not ok then
         return nil, message
     end
+    data:DetectStartupDataLoss(startupExternal, previousExternal)
     data:RecoverLegacyData()
     return data
 end
@@ -796,6 +813,224 @@ function Data:GetPersistableData(source)
     end
     snapshot.recovery = nil
     return snapshot
+end
+
+local function getContentCounts(source)
+    local counts = {
+        listCount = 0,
+        itemCount = 0,
+        historyCount = 0,
+        transactionCount = type(source.purchaseTransactions) == "table"
+            and #source.purchaseTransactions or 0,
+        meaningfulListCount = 0,
+        meaningfulItemCount = 0,
+    }
+    local function countList(list)
+        if type(list) ~= "table" then
+            return
+        end
+        counts.listCount = counts.listCount + 1
+        if zo_strtrim(list.name or "") ~= DEFAULT_LIST_NAME
+            or zo_strtrim(list.note or "") ~= ""
+            or (tonumber(list.totalSpent) or 0) > 0
+            or (tonumber(list.transactionSpent) or 0) > 0
+            or (tonumber(list.budget) or 0) > 0
+        then
+            counts.meaningfulListCount = counts.meaningfulListCount + 1
+        end
+        for _, item in ipairs(type(list.items) == "table" and list.items or {}) do
+            counts.itemCount = counts.itemCount + 1
+            local history = type(item.purchaseHistory) == "table"
+                and item.purchaseHistory or {}
+            counts.historyCount = counts.historyCount + math.max(
+                #history,
+                tonumber(item.purchaseCount) or 0
+            )
+            if zo_strtrim(item.note or "") ~= ""
+                or (tonumber(item.purchased) or 0) > 0
+                or (tonumber(item.totalSpent) or 0) > 0
+                or item.maxUnitPrice ~= nil
+                or item.match ~= nil
+            then
+                counts.meaningfulItemCount = counts.meaningfulItemCount + 1
+            end
+        end
+    end
+    for _, key in ipairs({ "lists", "archivedLists" }) do
+        for _, list in ipairs(type(source[key]) == "table" and source[key] or {}) do
+            countList(list)
+        end
+    end
+    for _, action in ipairs(type(source.deletedActions) == "table"
+        and source.deletedActions or {})
+    do
+        if action.kind == "list" then
+            countList(action.list)
+        elseif action.kind == "items" then
+            for _, removed in ipairs(type(action.items) == "table" and action.items or {}) do
+                local item = removed.item
+                if type(item) == "table" then
+                    counts.itemCount = counts.itemCount + 1
+                    local history = type(item.purchaseHistory) == "table"
+                        and item.purchaseHistory or {}
+                    counts.historyCount = counts.historyCount + math.max(
+                        #history,
+                        tonumber(item.purchaseCount) or 0
+                    )
+                    counts.meaningfulItemCount = counts.meaningfulItemCount + 1
+                end
+            end
+        end
+    end
+    return counts
+end
+
+local function snapshotHasMore(candidate, current)
+    if type(candidate) ~= "table" then
+        return false
+    end
+    for _, key in ipairs({
+        "listCount",
+        "itemCount",
+        "historyCount",
+        "transactionCount",
+        "meaningfulListCount",
+        "meaningfulItemCount",
+    }) do
+        if (tonumber(candidate[key]) or 0) > (tonumber(current[key]) or 0) then
+            return true
+        end
+    end
+    return false
+end
+
+function Data:GetLatestExternalSnapshot()
+    local store = self.externalBackups
+    if type(store) ~= "table" or type(store.snapshots) ~= "table" then
+        return nil
+    end
+    for index = #store.snapshots, 1, -1 do
+        local snapshot = store.snapshots[index]
+        if type(snapshot) == "table"
+            and (type(snapshot.code) == "string" or type(snapshot.data) == "table")
+        then
+            return snapshot
+        end
+    end
+end
+
+function Data:CreateExternalSnapshot(kind, source)
+    local store = self.externalBackups
+    if type(store) ~= "table" then
+        return nil, GetString(SI_SHOPPING_LIST_EXTERNAL_BACKUP_FAILED)
+    end
+    store.snapshots = type(store.snapshots) == "table" and store.snapshots or {}
+    store.nextId = math.max(1, math.floor(tonumber(store.nextId) or 1))
+
+    local data = self:GetPersistableData(source)
+    if not data then
+        return nil, GetString(SI_SHOPPING_LIST_EXTERNAL_BACKUP_FAILED)
+    end
+    local code = ShoppingListBackup.Encode(data)
+    local counts = getContentCounts(data)
+    local latest = store.snapshots[#store.snapshots]
+    if code and type(latest) == "table" and latest.code == code then
+        latest.kind = tostring(kind or "checkpoint")
+        latest.createdAt = GetTimeStamp()
+        latest.schemaVersion = tonumber(data.schemaVersion) or 1
+        latest.addonVersion = GravvyShoppingList
+            and GravvyShoppingList.GetBuildVersion
+            and GravvyShoppingList:GetBuildVersion() or 0
+        for key, value in pairs(counts) do
+            latest[key] = value
+        end
+        return latest
+    end
+    local snapshot = {
+        id = store.nextId,
+        kind = tostring(kind or "checkpoint"),
+        createdAt = GetTimeStamp(),
+        schemaVersion = tonumber(data.schemaVersion) or 1,
+        addonVersion = GravvyShoppingList and GravvyShoppingList.GetBuildVersion
+            and GravvyShoppingList:GetBuildVersion() or 0,
+        world = GetWorldName(),
+        code = code,
+    }
+    if not code then
+        snapshot.data = data
+    end
+    for key, value in pairs(counts) do
+        snapshot[key] = value
+    end
+    store.nextId = store.nextId + 1
+    store.snapshots[#store.snapshots + 1] = snapshot
+    while #store.snapshots > MAX_EXTERNAL_SNAPSHOTS do
+        table.remove(store.snapshots, 1)
+    end
+    return snapshot
+end
+
+function Data:DetectStartupDataLoss(startupSnapshot, previousSnapshot)
+    local current = getContentCounts(self.saved)
+    if snapshotHasMore(startupSnapshot, current) then
+        self.pendingExternalRestore = startupSnapshot
+    elseif snapshotHasMore(previousSnapshot, current) then
+        self.pendingExternalRestore = previousSnapshot
+    end
+    if not self.pendingExternalRestore then
+        local snapshots = self:GetSafetySnapshots()
+        for index = #snapshots, 1, -1 do
+            local safety = snapshots[index]
+            local recovered = type(safety) == "table"
+                and type(safety.code) == "string"
+                and ShoppingListBackup.Decode(safety.code) or nil
+            if recovered then
+                local candidate = {
+                    code = safety.code,
+                    kind = "internal_safety",
+                }
+                for key, value in pairs(getContentCounts(recovered)) do
+                    candidate[key] = value
+                end
+                if snapshotHasMore(candidate, current) then
+                    self.pendingExternalRestore = candidate
+                    break
+                end
+            end
+        end
+    end
+    return self.pendingExternalRestore ~= nil
+end
+
+function Data:RestorePendingExternalSnapshot()
+    local pending = self.pendingExternalRestore
+    if not pending then
+        return false, nil, false
+    end
+    local snapshot, message
+    if type(pending.code) == "string" then
+        snapshot, message = ShoppingListBackup.Decode(pending.code)
+    elseif type(pending.data) == "table" then
+        snapshot = deepCopy(pending.data)
+    end
+    if not snapshot then
+        return false, message, true
+    end
+    local ok
+    ok, message = self:RestoreBackup(snapshot)
+    if not ok then
+        return false, message, true
+    end
+    self.pendingExternalRestore = nil
+    self:CreateExternalSnapshot("automatic_restore", self.saved)
+    return true, nil, true
+end
+
+function Data:CreateDeactivationBackup()
+    if self.pendingExternalRestore then
+        return false
+    end
+    return self:CreateExternalSnapshot("checkpoint", self.saved) ~= nil
 end
 
 function Data:CreateSafetySnapshot(kind, source)

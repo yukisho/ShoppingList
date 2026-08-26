@@ -1,4 +1,8 @@
 0.18.5
+• Added a separate SavedVariables recovery store that captures the complete primary data before every startup migration or normalization.
+• Added automatic first open recovery when startup comparison detects that lists, items, history, transactions, notes, or other meaningful list state disappeared.
+• Included existing pre-migration safety copies as a recovery source for installations affected before the separate store was created.
+• Added deactivation and logout checkpoints while retaining ten distinct recovery states without filling the history with identical copies.
 • Restored reliable automatic opening beside guild traders by applying missing legacy setting defaults and listening to both trading house events and scene state changes.
 • Separated full guild store transaction spending from the cost allocated to quantities that shopping list entries actually needed; list budgets now use full transaction spending.
 • Added bounded transaction and item purchase histories while preserving lifetime quantities and spending totals.

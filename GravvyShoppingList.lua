@@ -137,6 +137,11 @@ function addon:RegisterEvents()
         EVENT_CLOSE_TRADING_HOUSE,
         function() self:HandleStoreClosed() end
     )
+    EVENT_MANAGER:RegisterForEvent(
+        "GravvyShoppingList_SaveCheckpoint",
+        EVENT_PLAYER_DEACTIVATED,
+        function() self.data:CreateDeactivationBackup() end
+    )
 
     local registeredScenes = {}
     for _, scene in pairs({
@@ -155,6 +160,31 @@ function addon:RegisterEvents()
             end)
         end
     end
+end
+
+function addon:RestoreStartupDataIfNeeded()
+    if self.startupRecoveryChecked then
+        return
+    end
+    self.startupRecoveryChecked = true
+    local restored, message, attempted = self.data:RestorePendingExternalSnapshot()
+    if not attempted then
+        return
+    end
+    if not restored then
+        self.startupRecoveryChecked = false
+        d(zo_strformat(
+            GetString(SI_SHOPPING_LIST_EXTERNAL_RESTORE_FAILED),
+            message or GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
+        ))
+        return
+    end
+    self.ui.listSignature = nil
+    self.accessibility:Apply()
+    if self.inventory then
+        self.inventory:Refresh()
+    end
+    d(GetString(SI_SHOPPING_LIST_EXTERNAL_RESTORED))
 end
 
 function addon:RegisterCommands()

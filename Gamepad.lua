@@ -288,6 +288,7 @@ function Gamepad:Show()
     if not IsInGamepadPreferredMode() or self:IsShowing() then
         return
     end
+    self.owner:RestoreStartupDataIfNeeded()
     self.owner.ui:Hide()
     self.control:SetHidden(false)
     self.keybindState = KEYBIND_STRIP:PushKeybindGroupState()

@@ -1499,6 +1499,7 @@ function UI:ReleaseMouse()
 end
 
 function UI:Show(requestMouse)
+    self.owner:RestoreStartupDataIfNeeded()
     self:PositionBesideStore()
     self.window:SetHidden(false)
     if requestMouse then

@@ -6,7 +6,7 @@
 ## AddOnVersion: 31
 ## DependsOn: LibAddonMenu-2.0>=43 LibMainMenu-2.0>=40500 LibSets>=0009000
 ## OptionalDependsOn: AwesomeGuildStore LibCustomMenu ShoppingList
-## SavedVariables: ShoppingList_Data
+## SavedVariables: ShoppingList_Data ShoppingList_BackupData
 
 # The manifest filename is the internal add-on identifier. Keep it unique from
 # the discontinued Master Merchant ShoppingList importer.
