@@ -7,6 +7,8 @@ local SHARE_DIALOG = "SHOPPING_LIST_GAMEPAD_SHARE"
 local IMPORT_DIALOG = "SHOPPING_LIST_GAMEPAD_IMPORT"
 local BACKUP_DIALOG = "SHOPPING_LIST_GAMEPAD_BACKUP"
 local BACKUP_RESTORE_DIALOG = "SHOPPING_LIST_GAMEPAD_BACKUP_RESTORE"
+local SAFETY_DIALOG = "SHOPPING_LIST_GAMEPAD_SAFETY_COPIES"
+local SAFETY_RESTORE_DIALOG = "SHOPPING_LIST_GAMEPAD_SAFETY_RESTORE"
 local HELP_DIALOG = "SHOPPING_LIST_GAMEPAD_HELP"
 local RELEASE_NOTES_DIALOG = "SHOPPING_LIST_GAMEPAD_RELEASE_NOTES"
 local LIST_NAME_DIALOG = "SHOPPING_LIST_GAMEPAD_LIST_NAME"
@@ -165,6 +167,7 @@ function Gamepad:InitializeManagementDialogs()
     self:InitializeShareDialog()
     self:InitializeImportDialog()
     self:InitializeBackupDialog()
+    self:InitializeSafetyDialogs()
     self:InitializeHelpDialogs()
 end
 
@@ -292,6 +295,10 @@ function Gamepad:InitializeManageDialog()
                 function() self:OpenBackupFromManagement() end
             ),
             actionEntry(
+                SI_SHOPPING_LIST_SAFETY_TITLE,
+                function() self:OpenSafetyCopiesFromManagement() end
+            ),
+            actionEntry(
                 SI_SHOPPING_LIST_GAMEPAD_HELP,
                 function() self:OpenHelpFromManagement() end
             ),
@@ -352,7 +359,7 @@ function Gamepad:InitializeListNameDialog()
                 value = function() return self.pendingListName end,
                 changed = function(value) self.pendingListName = value end,
                 defaultText = GetString(SI_SHOPPING_LIST_GAMEPAD_LIST_NAME),
-                maxChars = 60,
+                maxChars = ShoppingListModel.MAX_NAME_LENGTH,
             }),
             textFieldEntry(SI_SHOPPING_LIST_LIST_NOTE, {
                 value = function() return self.pendingListNote end,
@@ -432,6 +439,7 @@ function Gamepad:InitializeBudgetManagementDialog()
                 local list = self.owner.data:GetCurrentList()
                 return zo_strformat(
                     GetString(SI_SHOPPING_LIST_RECORDED_SPENDING),
+                    formatGold(list.transactionSpent or list.totalSpent),
                     formatGold(list.totalSpent)
                 )
             end,
@@ -441,7 +449,7 @@ function Gamepad:InitializeBudgetManagementDialog()
                 value = function() return self.pendingBudget end,
                 changed = function(value) self.pendingBudget = value end,
                 defaultText = GetString(SI_SHOPPING_LIST_NO_BUDGET),
-                maxChars = 12,
+                maxChars = #tostring(ShoppingListModel.MAX_PRICE),
                 numeric = true,
             }),
         },
@@ -625,14 +633,14 @@ function Gamepad:InitializeEditDialog()
                 value = function() return self.pendingEdit.desired end,
                 changed = function(value) self.pendingEdit.desired = value end,
                 defaultText = GetString(SI_SHOPPING_LIST_EDITOR_QUANTITY),
-                maxChars = 6,
+                maxChars = #tostring(ShoppingListModel.MAX_QUANTITY),
                 numeric = true,
             }),
             textFieldEntry(SI_SHOPPING_LIST_EDITOR_SET, {
                 value = function() return self.pendingEdit.setName end,
                 changed = function(value) self.pendingEdit.setName = value end,
                 defaultText = GetString(SI_SHOPPING_LIST_EDITOR_ANY_SET),
-                maxChars = 100,
+                maxChars = ShoppingListModel.MAX_NAME_LENGTH,
             }),
             dropdownEntry(
                 SI_SHOPPING_LIST_EDITOR_TRAIT,
@@ -662,21 +670,21 @@ function Gamepad:InitializeEditDialog()
                 value = function() return self.pendingEdit.level end,
                 changed = function(value) self.pendingEdit.level = value end,
                 defaultText = GetString(SI_SHOPPING_LIST_EDITOR_LEVEL),
-                maxChars = 4,
+                maxChars = #tostring(ShoppingListModel.MAX_LEVEL),
                 numeric = true,
             }),
             textFieldEntry(SI_SHOPPING_LIST_EDITOR_CHAMPION_POINTS, {
                 value = function() return self.pendingEdit.championPoints end,
                 changed = function(value) self.pendingEdit.championPoints = value end,
                 defaultText = GetString(SI_SHOPPING_LIST_EDITOR_CHAMPION_POINTS),
-                maxChars = 4,
+                maxChars = #tostring(ShoppingListModel.MAX_CHAMPION_POINTS),
                 numeric = true,
             }),
             textFieldEntry(SI_SHOPPING_LIST_EDITOR_MAX_UNIT_PRICE, {
                 value = function() return self.pendingEdit.maxUnitPrice end,
                 changed = function(value) self.pendingEdit.maxUnitPrice = value end,
                 defaultText = GetString(SI_SHOPPING_LIST_EDITOR_GOLD_NONE),
-                maxChars = 10,
+                maxChars = #tostring(ShoppingListModel.MAX_PRICE),
                 numeric = true,
             }),
             textFieldEntry(SI_SHOPPING_LIST_EDITOR_NOTE, {
@@ -855,6 +863,7 @@ function Gamepad:InitializeBackupDialog()
         },
         setup = function(dialog)
             self.gamepadBackupCode = dialog.data.code
+            dialog.info.mainText.text = dialog.data.help
             dialog:setupFunc()
         end,
         title = {
@@ -900,6 +909,61 @@ function Gamepad:InitializeBackupDialog()
                 keybind = "DIALOG_PRIMARY",
                 text = SI_SHOPPING_LIST_BACKUP_RESTORE,
                 callback = function() self:RestoreGamepadBackup() end,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_DIALOG_CANCEL,
+            },
+        },
+    })
+end
+
+function Gamepad:InitializeSafetyDialogs()
+    ZO_Dialogs_RegisterCustomDialog(SAFETY_DIALOG, {
+        blockDialogReleaseOnPress = true,
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.PARAMETRIC,
+        },
+        setup = function(dialog)
+            dialog.info.parametricList = self:BuildSafetyCopyEntries()
+            dialog:setupFunc()
+        end,
+        title = {
+            text = SI_SHOPPING_LIST_SAFETY_TITLE,
+        },
+        mainText = {
+            text = SI_SHOPPING_LIST_SAFETY_GAMEPAD_HELP,
+        },
+        parametricList = {},
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_SHOPPING_LIST_SAFETY_RESTORE,
+                callback = selectDialogEntry,
+            },
+            {
+                keybind = "DIALOG_NEGATIVE",
+                text = SI_GAMEPAD_BACK_OPTION,
+                callback = cancelDialog(SAFETY_DIALOG),
+            },
+        },
+    })
+
+    ZO_Dialogs_RegisterCustomDialog(SAFETY_RESTORE_DIALOG, {
+        gamepadInfo = {
+            dialogType = GAMEPAD_DIALOGS.BASIC,
+        },
+        title = {
+            text = SI_SHOPPING_LIST_SAFETY_RESTORE_TITLE,
+        },
+        mainText = {
+            text = SI_SHOPPING_LIST_SAFETY_RESTORE_CONFIRM,
+        },
+        buttons = {
+            {
+                keybind = "DIALOG_PRIMARY",
+                text = SI_SHOPPING_LIST_SAFETY_RESTORE,
+                callback = function() self:RestoreGamepadSafetyCopy() end,
             },
             {
                 keybind = "DIALOG_NEGATIVE",
@@ -1307,6 +1371,56 @@ function Gamepad:OpenArchivesFromManagement()
     end)
 end
 
+function Gamepad:OpenSafetyCopiesFromManagement()
+    releaseAndOpen(MANAGE_DIALOG, function()
+        ZO_Dialogs_ShowGamepadDialog(SAFETY_DIALOG)
+    end)
+end
+
+function Gamepad:BuildSafetyCopyEntries()
+    local entries = {}
+    local snapshots = self.owner.data:GetSafetySnapshots()
+    for index = #snapshots, 1, -1 do
+        local snapshot = snapshots[index]
+        local snapshotId = snapshot.id
+        local label = ShoppingListBackup.GetSafetyLabel(snapshot)
+        local entry = ZO_GamepadEntryData:New(label)
+        entry.setup = ZO_SharedGamepadEntry_OnSetup
+        entry.callback = function()
+            self.pendingGamepadSafetyId = snapshotId
+            releaseAndOpen(SAFETY_DIALOG, function()
+                ZO_Dialogs_ShowGamepadDialog(SAFETY_RESTORE_DIALOG)
+            end)
+        end
+        entries[#entries + 1] = {
+            template = "ZO_GamepadMenuEntryTemplate",
+            entryData = entry,
+        }
+    end
+    if #entries == 0 then
+        local empty = actionEntry(GetString(SI_SHOPPING_LIST_SAFETY_EMPTY), function() end)
+        empty.templateData.enabled = false
+        entries[1] = empty
+    end
+    return entries
+end
+
+function Gamepad:RestoreGamepadSafetyCopy()
+    local id = self.pendingGamepadSafetyId
+    self.pendingGamepadSafetyId = nil
+    local ok, message = self.owner.data:RestoreSafetySnapshot(id)
+    if not ok then
+        showError(message)
+        return
+    end
+    self.owner.ui.listSignature = nil
+    self.owner.accessibility:Apply()
+    self.owner:RefreshInventory()
+    local status = GetString(SI_SHOPPING_LIST_SAFETY_RESTORED)
+    self:SetStatus(status)
+    self.owner.ui:SetStatus(status)
+end
+
 function Gamepad:BuildArchivedListEntries()
     local entries = {}
     local lists = self.owner.data:GetArchivedLists()
@@ -1319,7 +1433,7 @@ function Gamepad:BuildArchivedListEntries()
         entry:AddSubLabel(zo_strformat(
             GetString(SI_SHOPPING_LIST_GAMEPAD_ARCHIVE_DETAILS),
             #list.items,
-            formatGold(list.totalSpent)
+            formatGold(list.transactionSpent or list.totalSpent)
         ))
         entries[#entries + 1] = {
             template = "ZO_GamepadMenuEntryTemplate",
@@ -1430,8 +1544,13 @@ function Gamepad:OpenBackupFromManagement()
         showError(message)
         return
     end
+    local health = ShoppingListBackup.GetHealth(code)
     releaseAndOpen(MANAGE_DIALOG, function()
-        ZO_Dialogs_ShowGamepadDialog(BACKUP_DIALOG, { code = code })
+        ZO_Dialogs_ShowGamepadDialog(BACKUP_DIALOG, {
+            code = code,
+            help = GetString(SI_SHOPPING_LIST_GAMEPAD_BACKUP_HELP)
+                .. "\n" .. health,
+        })
     end)
 end
 

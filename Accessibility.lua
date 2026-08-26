@@ -1,6 +1,7 @@
 ShoppingListAccessibility = {
     fonts = setmetatable({}, { __mode = "k" }),
     backdrops = setmetatable({}, { __mode = "k" }),
+    windows = setmetatable({}, { __mode = "k" }),
 }
 
 local Accessibility = ShoppingListAccessibility
@@ -15,27 +16,25 @@ end
 
 function Accessibility:SetFont(control, fontName)
     self.fonts[control] = fontName
+    local root = control
+    while root and root.GetParent and root:GetParent()
+        and root:GetParent() ~= GuiRoot
+    do
+        root = root:GetParent()
+    end
+    local rootName = root and root.GetName and root:GetName() or ""
+    if root and root.SetScale
+        and string.find(rootName, "ShoppingList", 1, true) == 1
+        and not string.find(rootName, "Gamepad", 1, true)
+    then
+        self.windows[root] = true
+        root:SetScale(tonumber(self:GetSettings().fontScale) or 1)
+    end
     self:ApplyFont(control, fontName)
 end
 
 function Accessibility:ApplyFont(control, fontName)
-    local scale = tonumber(self:GetSettings().fontScale) or 1
-    local fontObject = _G[fontName]
-    if scale == 1 or not fontObject or not fontObject.GetFontInfo then
-        control:SetFont(fontName)
-        return
-    end
-
-    local face, size, style = fontObject:GetFontInfo()
-    if not face or not size then
-        control:SetFont(fontName)
-        return
-    end
-    local descriptor = string.format("%s|%d", face, math.floor((size * scale) + 0.5))
-    if style and style ~= "" then
-        descriptor = descriptor .. "|" .. style
-    end
-    control:SetFont(descriptor)
+    control:SetFont(fontName)
 end
 
 function Accessibility:RegisterBackdrop(backdrop, center, edge)
@@ -62,6 +61,10 @@ function Accessibility:Apply()
     end
     for backdrop, colors in pairs(self.backdrops) do
         self:ApplyBackdrop(backdrop, colors)
+    end
+    local scale = tonumber(self:GetSettings().fontScale) or 1
+    for window in pairs(self.windows) do
+        window:SetScale(scale)
     end
 end
 

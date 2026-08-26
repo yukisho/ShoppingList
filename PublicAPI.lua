@@ -1,7 +1,7 @@
 local API_VERSION = 2
-local MAX_QUANTITY = 1000000
-local MAX_BATCH_ITEMS = 500
-local MAX_LIST_NAME_BYTES = 512
+local MAX_QUANTITY = ShoppingListModel.MAX_QUANTITY
+local MAX_BATCH_ITEMS = ShoppingListModel.MAX_ITEMS_PER_LIST
+local MAX_LIST_NAME_BYTES = ShoppingListModel.MAX_NAME_LENGTH
 
 local ERROR = {
     NOT_READY = "NOT_READY",
@@ -20,17 +20,6 @@ local ERROR = {
 local API = {
     VERSION = API_VERSION,
     ERROR = ERROR,
-}
-
-local QUALITY_MODES = {
-    any = true,
-    minimum = true,
-    exact = true,
-}
-
-local LEVEL_MODES = {
-    any = true,
-    exact = true,
 }
 
 local function getData()
@@ -60,7 +49,7 @@ local function findList(data, options)
             return nil, ERROR.INVALID_OPTIONS
         end
         local wanted = zo_strlower(zo_strtrim(listName))
-        if wanted == "" then
+        if wanted == "" or #wanted > MAX_LIST_NAME_BYTES then
             return nil, ERROR.INVALID_OPTIONS
         end
         for _, list in ipairs(data:GetLists()) do
@@ -80,7 +69,7 @@ local function readItem(value)
     end
 
     value = zo_strtrim(value)
-    if value == "" then
+    if value == "" or #value > ShoppingListModel.MAX_LINK_LENGTH then
         return nil
     end
 
@@ -97,6 +86,9 @@ local function readItem(value)
     end
 
     if string.find(value, "|H", 1, true) then
+        return nil
+    end
+    if #value > ShoppingListModel.MAX_NAME_LENGTH then
         return nil
     end
     return value, ""
@@ -165,58 +157,27 @@ local function prepareMatch(values, itemLink)
         end
     end
 
-    if values.traitType ~= nil then
-        local traitType = readWholeNumber(values.traitType, 0)
-        if not traitType then
-            return nil, ERROR.INVALID_MATCH
-        end
-        rule.traitType = traitType
-    end
+    if values.traitType ~= nil then rule.traitType = values.traitType end
 
     if values.qualityMode ~= nil then
-        if type(values.qualityMode) ~= "string" or not QUALITY_MODES[values.qualityMode] then
-            return nil, ERROR.INVALID_MATCH
-        end
         rule.qualityMode = values.qualityMode
     end
     if values.quality ~= nil then
-        local quality = readWholeNumber(values.quality, 0)
-        if not quality then
-            return nil, ERROR.INVALID_MATCH
-        end
-        rule.quality = quality
-    end
-    if rule.qualityMode ~= "any" and rule.quality == nil then
-        return nil, ERROR.INVALID_MATCH
+        rule.quality = values.quality
     end
 
     if values.levelMode ~= nil then
-        if type(values.levelMode) ~= "string" or not LEVEL_MODES[values.levelMode] then
-            return nil, ERROR.INVALID_MATCH
-        end
         rule.levelMode = values.levelMode
     end
     if values.level ~= nil then
-        local level = readWholeNumber(values.level, 1)
-        if not level then
-            return nil, ERROR.INVALID_MATCH
-        end
-        rule.level = level
+        rule.level = values.level
     end
     if values.championPoints ~= nil then
-        local championPoints = readWholeNumber(values.championPoints, 0)
-        if not championPoints then
-            return nil, ERROR.INVALID_MATCH
-        end
-        rule.championPoints = championPoints
-    end
-    if rule.levelMode == "exact"
-        and (rule.level == nil or rule.championPoints == nil)
-    then
-        return nil, ERROR.INVALID_MATCH
+        rule.championPoints = values.championPoints
     end
 
-    return rule
+    rule = ShoppingListModel:NormalizeMatchingRule(rule)
+    return rule, rule and nil or ERROR.INVALID_MATCH
 end
 
 local function readEntryValue(source)
@@ -239,6 +200,9 @@ local function prepareItem(source)
         return nil, ERROR.INVALID_ITEM
     end
     if source.note ~= nil and type(source.note) ~= "string" then
+        return nil, ERROR.INVALID_OPTIONS
+    end
+    if source.note and #source.note > ShoppingListModel.MAX_NOTE_LENGTH then
         return nil, ERROR.INVALID_OPTIONS
     end
 
@@ -448,6 +412,9 @@ function API:CreateList(spec)
         return false, ERROR.INVALID_LIST_NAME
     end
     if spec.note ~= nil and type(spec.note) ~= "string" then
+        return false, ERROR.INVALID_OPTIONS
+    end
+    if spec.note and #spec.note > ShoppingListModel.MAX_NOTE_LENGTH then
         return false, ERROR.INVALID_OPTIONS
     end
     if spec.select ~= nil and type(spec.select) ~= "boolean" then

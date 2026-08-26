@@ -7,8 +7,6 @@
             <Controls>
                 <Backdrop name="$(parent)Backdrop" inherits="ZO_DefaultBackdrop">
                     <AnchorFill/>
-                    <CenterColor r="0.035" g="0.035" b="0.045" a="0.96"/>
-                    <EdgeColor r="0.5" g="0.42" b="0.28" a="0.9"/>
                 </Backdrop>
                 <Label name="$(parent)Title" font="ZoFontGamepadBold48" color="FFFFFF" horizontalAlignment="LEFT">
                     <Anchor point="TOPLEFT" offsetX="30" offsetY="20"/>

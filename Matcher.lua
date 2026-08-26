@@ -56,13 +56,14 @@ function Matcher:GetScore(entry, purchase, includeComplete)
         return nil
     end
 
-    if entry.normalizedName ~= purchase.normalizedName then
-        return nil
-    end
-
     local score = 10
-    if entry.itemId and entry.itemId == purchase.itemId then
+    if entry.itemId then
+        if entry.itemId ~= purchase.itemId then
+            return nil
+        end
         score = score + 100
+    elseif entry.normalizedName ~= purchase.normalizedName then
+        return nil
     end
 
     local rule = entry.match or {}

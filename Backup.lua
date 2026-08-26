@@ -7,8 +7,30 @@ local MAX_CODE_LENGTH = 500000
 local MAX_ENTRIES = 250000
 local MAX_DEPTH = 32
 local RESTORE_DIALOG = "SHOPPING_LIST_CONFIRM_BACKUP_RESTORE"
+local SAFETY_RESTORE_DIALOG = "SHOPPING_LIST_CONFIRM_SAFETY_RESTORE"
 
 Backup.MAX_CODE_LENGTH = MAX_CODE_LENGTH
+
+function Backup.GetHealth(code)
+    local length = type(code) == "string" and #code or 0
+    local percent = math.min(100, math.floor((length * 100 / MAX_CODE_LENGTH) + 0.5))
+    local state = SI_SHOPPING_LIST_BACKUP_HEALTH_GOOD
+    local level = "good"
+    if percent >= 90 then
+        state = SI_SHOPPING_LIST_BACKUP_HEALTH_CRITICAL
+        level = "critical"
+    elseif percent >= 75 then
+        state = SI_SHOPPING_LIST_BACKUP_HEALTH_WARNING
+        level = "warning"
+    end
+    return zo_strformat(
+        GetString(SI_SHOPPING_LIST_BACKUP_HEALTH),
+        ZO_CommaDelimitNumber(length),
+        ZO_CommaDelimitNumber(MAX_CODE_LENGTH),
+        percent,
+        GetString(state)
+    ), level, percent
+end
 
 local function makeLabel(parent, font)
     local label = WINDOW_MANAGER:CreateControl(nil, parent, CT_LABEL)
@@ -251,13 +273,32 @@ function Backup.Decode(code)
     return decoded
 end
 
+function Backup.GetSafetyLabel(snapshot)
+    local kindId = SI_SHOPPING_LIST_SAFETY_KIND_OTHER
+    if snapshot.kind == "pre_migration" then
+        kindId = SI_SHOPPING_LIST_SAFETY_KIND_MIGRATION
+    elseif snapshot.kind == "pre_import" then
+        kindId = SI_SHOPPING_LIST_SAFETY_KIND_IMPORT
+    elseif snapshot.kind == "pre_restore" then
+        kindId = SI_SHOPPING_LIST_SAFETY_KIND_RESTORE
+    elseif snapshot.kind == "pre_legacy_recovery" then
+        kindId = SI_SHOPPING_LIST_SAFETY_KIND_LEGACY
+    end
+    return zo_strformat(
+        GetString(SI_SHOPPING_LIST_SAFETY_ENTRY),
+        snapshot.id,
+        GetString(kindId),
+        snapshot.sourceSchema or 1
+    )
+end
+
 function Backup:New(owner)
     return setmetatable({ owner = owner }, { __index = self })
 end
 
 function Backup:Initialize()
     local window = WINDOW_MANAGER:CreateTopLevelWindow("ShoppingListBackupWindow")
-    window:SetDimensions(700, 430)
+    window:SetDimensions(700, 500)
     window:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     window:SetClampedToScreen(true)
     window:SetMouseEnabled(true)
@@ -266,7 +307,7 @@ function Backup:Initialize()
     window:SetDrawTier(DT_HIGH)
     self.window = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(window)
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.99)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
@@ -314,8 +355,32 @@ function Backup:Initialize()
     self.codeEdit = codeEdit
 
     self.status = makeLabel(window, "ZoFontGameSmall")
-    self.status:SetAnchor(TOPLEFT, window, TOPLEFT, 18, 342)
+    self.status:SetAnchor(TOPLEFT, window, TOPLEFT, 18, 410)
     self.status:SetDimensions(664, 34)
+
+    local safetyLabel = makeLabel(window, "ZoFontGame")
+    safetyLabel:SetText(GetString(SI_SHOPPING_LIST_SAFETY_TITLE))
+    safetyLabel:SetAnchor(TOPLEFT, window, TOPLEFT, 18, 346)
+    safetyLabel:SetDimensions(175, 30)
+
+    local safetyControl = WINDOW_MANAGER:CreateControlFromVirtual(
+        "ShoppingListSafetyCopyDropdown",
+        window,
+        "ZO_ComboBox"
+    )
+    safetyControl:SetAnchor(LEFT, safetyLabel, RIGHT, 8, 0)
+    safetyControl:SetDimensions(275, 30)
+    self.safetyCombo = ZO_ComboBox_ObjectFromContainer(safetyControl)
+    self.safetyCombo:SetSortsItems(false)
+
+    local restoreSafety = makeButton(
+        window,
+        GetString(SI_SHOPPING_LIST_SAFETY_RESTORE),
+        180
+    )
+    restoreSafety:SetAnchor(LEFT, safetyControl, RIGHT, 8, 0)
+    restoreSafety:SetHandler("OnClicked", function() self:ConfirmSafetyRestore() end)
+    self.restoreSafetyButton = restoreSafety
 
     local generate = makeButton(window, GetString(SI_SHOPPING_LIST_BACKUP_GENERATE), 130)
     generate:SetAnchor(BOTTOMLEFT, window, BOTTOMLEFT, 18, -16)
@@ -347,6 +412,21 @@ function Backup:Initialize()
             self.owner.ui:RestoreOwnedMouse()
         end,
     })
+
+    ZO_Dialogs_RegisterCustomDialog(SAFETY_RESTORE_DIALOG, {
+        title = { text = SI_SHOPPING_LIST_SAFETY_RESTORE_TITLE },
+        mainText = { text = SI_SHOPPING_LIST_SAFETY_RESTORE_CONFIRM },
+        buttons = {
+            {
+                text = SI_SHOPPING_LIST_SAFETY_RESTORE,
+                callback = function() self:RestoreSelectedSafetyCopy() end,
+            },
+            { text = SI_DIALOG_CANCEL },
+        },
+        finishedCallback = function()
+            self.owner.ui:RestoreOwnedMouse()
+        end,
+    })
 end
 
 function Backup:SetStatus(message, isError)
@@ -362,7 +442,57 @@ function Backup:Open()
         self.owner.share:Hide()
     end
     self.window:SetHidden(false)
+    self:RefreshSafetyCopies()
     self:Generate()
+end
+
+function Backup:RefreshSafetyCopies()
+    local combo = self.safetyCombo
+    combo:ClearItems()
+    self.selectedSafetyId = nil
+    local selectedLabel
+    local snapshots = self.owner.data:GetSafetySnapshots()
+    for index = #snapshots, 1, -1 do
+        local snapshot = snapshots[index]
+        local snapshotId = snapshot.id
+        local label = Backup.GetSafetyLabel(snapshot)
+        local entry = combo:CreateItemEntry(label, function()
+            self.selectedSafetyId = snapshotId
+        end)
+        combo:AddItem(entry, ZO_COMBOBOX_SUPPRESS_UPDATE)
+        if not self.selectedSafetyId then
+            self.selectedSafetyId = snapshotId
+            selectedLabel = label
+        end
+    end
+    combo:UpdateItems()
+    if selectedLabel then
+        combo:SetSelectedItem(selectedLabel)
+    else
+        combo:SetSelectedItem(GetString(SI_SHOPPING_LIST_SAFETY_EMPTY))
+    end
+    self.restoreSafetyButton:SetEnabled(self.selectedSafetyId ~= nil)
+end
+
+function Backup:ConfirmSafetyRestore()
+    if not self.selectedSafetyId then
+        self:SetStatus(GetString(SI_SHOPPING_LIST_SAFETY_MISSING), true)
+        return
+    end
+    ZO_Dialogs_ShowDialog(SAFETY_RESTORE_DIALOG)
+end
+
+function Backup:RestoreSelectedSafetyCopy()
+    local ok, message = self.owner.data:RestoreSafetySnapshot(self.selectedSafetyId)
+    if not ok then
+        self:SetStatus(message, true)
+        return
+    end
+    self.owner.ui.listSignature = nil
+    self.owner.accessibility:Apply()
+    self.owner:RefreshInventory()
+    self:RefreshSafetyCopies()
+    self:SetStatus(GetString(SI_SHOPPING_LIST_SAFETY_RESTORED))
 end
 
 function Backup:Hide()
@@ -376,6 +506,7 @@ function Backup:Generate()
         self:SetStatus(message, true)
         return
     end
+    self.healthMessage = Backup.GetHealth(code)
     self.codeEdit:SetText(code)
     self:SelectCode()
 end
@@ -385,7 +516,11 @@ function Backup:SelectCode()
     if self.codeEdit.SelectAll then
         self.codeEdit:SelectAll()
     end
-    self:SetStatus(GetString(SI_SHOPPING_LIST_BACKUP_COPY_HINT))
+    local status = GetString(SI_SHOPPING_LIST_BACKUP_COPY_HINT)
+    if self.healthMessage then
+        status = status .. "\n" .. self.healthMessage
+    end
+    self:SetStatus(status)
 end
 
 function Backup:ConfirmRestore()

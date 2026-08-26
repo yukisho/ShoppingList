@@ -206,7 +206,7 @@ function Gamepad:InitializeDialogs()
                             data,
                             selected,
                             GetString(SI_SHOPPING_LIST_GAMEPAD_ITEM_NAME),
-                            100,
+                            ShoppingListModel.MAX_NAME_LENGTH,
                             false
                         )
                     end,
@@ -225,7 +225,7 @@ function Gamepad:InitializeDialogs()
                             data,
                             selected,
                             GetString(SI_SHOPPING_LIST_GAMEPAD_QUANTITY),
-                            6,
+                            #tostring(ShoppingListModel.MAX_QUANTITY),
                             true
                         )
                     end,
@@ -376,7 +376,8 @@ function Gamepad:Refresh(force)
     local shoppingItems = self.owner.data:GetShoppingItems()
     local spent = 0
     for _, list in ipairs(shoppingLists) do
-        spent = spent + (tonumber(list.totalSpent) or 0)
+        spent = spent + (tonumber(list.transactionSpent)
+            or tonumber(list.totalSpent) or 0)
     end
     for _, item in ipairs(shoppingItems) do
         if item.completed then

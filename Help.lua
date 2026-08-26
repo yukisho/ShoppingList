@@ -40,7 +40,7 @@ function Help:Initialize()
     window:SetDrawLevel(6)
     self.window = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(window)
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.99)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)

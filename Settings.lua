@@ -107,6 +107,7 @@ function Settings:Initialize(owner)
         {
             type = "dropdown",
             name = GetString(SI_SHOPPING_LIST_SETTINGS_FONT_SCALE),
+            tooltip = GetString(SI_SHOPPING_LIST_SETTINGS_FONT_SCALE_TOOLTIP),
             choices = { "90%", "100%", "110%", "120%", "130%", "140%" },
             choicesValues = { 0.9, 1, 1.1, 1.2, 1.3, 1.4 },
             getFunc = function() return saved().fontScale end,

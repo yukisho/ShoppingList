@@ -124,6 +124,24 @@ function Adapter:ApplyAGSRule(entry)
     end
 end
 
+function Adapter:ResetAGSFilters()
+    local ids = self.api and self.api:GetFilterIds()
+    if type(ids) ~= "table" then
+        return
+    end
+    local reset = {}
+    for _, filterId in pairs(ids) do
+        local idType = type(filterId)
+        if (idType == "number" or idType == "string") and not reset[filterId] then
+            reset[filterId] = true
+            local filter = self.api:GetFilter(filterId)
+            if filter and filter.Reset then
+                filter:Reset()
+            end
+        end
+    end
+end
+
 function Adapter:Search(entry)
     if not storeIsReady(self.owner) then
         return false, GetString(SI_SHOPPING_LIST_SEARCH_OPEN_STORE)
@@ -131,6 +149,9 @@ function Adapter:Search(entry)
 
     local search = TRADING_HOUSE_SEARCH
     if entry.itemLink ~= "" and search and search.LoadSearchItem and search.DoSearch then
+        if self.api then
+            self:ResetAGSFilters()
+        end
         search:LoadSearchItem(entry.itemLink)
         if self.api then
             self:ApplyAGSRule(entry)
@@ -140,6 +161,7 @@ function Adapter:Search(entry)
     end
 
     if self.api then
+        self:ResetAGSFilters()
         self:ApplyAGSRule(entry)
         if search and search.DoSearch then
             startSharedSearch(search)

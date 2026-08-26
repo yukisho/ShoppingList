@@ -193,7 +193,7 @@ function Editor:Initialize()
     window:SetDrawTier(DT_HIGH)
     self.window = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(window)
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
@@ -213,10 +213,10 @@ function Editor:Initialize()
     self.itemName:SetWrapMode(TEXT_WRAP_MODE_ELLIPSIS)
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_QUANTITY), 18, 82)
-    self.quantity = makeEdit(window, 146, 82, 90, true)
+    self.quantity = makeEdit(window, 146, 82, 90, true, #tostring(ShoppingListModel.MAX_QUANTITY))
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_SET), 18, 122)
-    self.setName = makeEdit(window, 146, 122, 280, false)
+    self.setName = makeEdit(window, 146, 122, 280, false, ShoppingListModel.MAX_NAME_LENGTH)
     self.setName:SetDefaultText(GetString(SI_SHOPPING_LIST_EDITOR_ANY_SET))
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_TRAIT), 18, 162)
@@ -230,12 +230,12 @@ function Editor:Initialize()
     self.levelMode = makeCombo(window, "LevelMode", 146, 242, 135)
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_LEVEL), 18, 282)
-    self.level = makeEdit(window, 146, 282, 90, true)
+    self.level = makeEdit(window, 146, 282, 90, true, #tostring(ShoppingListModel.MAX_LEVEL))
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_CHAMPION_POINTS), 250, 282, 125)
-    self.championPoints = makeEdit(window, 376, 282, 50, true)
+    self.championPoints = makeEdit(window, 376, 282, 50, true, #tostring(ShoppingListModel.MAX_CHAMPION_POINTS))
 
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_MAX_UNIT_PRICE), 18, 326, 150)
-    self.maxUnitPrice = makeEdit(window, 174, 326, 120, true, 10)
+    self.maxUnitPrice = makeEdit(window, 174, 326, 120, true, #tostring(ShoppingListModel.MAX_PRICE))
     makeLabel(window, GetString(SI_SHOPPING_LIST_EDITOR_GOLD_NONE), 302, 326, 140)
 
     self.purchaseSummary = makeLabel(window, "", 18, 366, WINDOW_WIDTH - 36)

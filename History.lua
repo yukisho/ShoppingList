@@ -71,7 +71,7 @@ function History:Initialize()
     window:SetHandler("OnMouseWheel", function(_, delta) self:Scroll(-delta) end)
     self.window = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(window)
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
@@ -207,14 +207,22 @@ function History:Refresh()
     local history = self.item.purchaseHistory or {}
     local maxOffset = math.max(0, #history - ROW_COUNT)
     self.offset = zo_clamp(self.offset, 0, maxOffset)
-    self.summary:SetText(zo_strformat(
+    local purchaseCount = math.max(#history, tonumber(self.item.purchaseCount) or 0)
+    local summary = zo_strformat(
         GetString(SI_SHOPPING_LIST_HISTORY_SUMMARY),
-        #history,
-        GetString(#history == 1
+        purchaseCount,
+        GetString(purchaseCount == 1
             and SI_SHOPPING_LIST_NOUN_PURCHASE
             or SI_SHOPPING_LIST_NOUN_PURCHASES),
         formatGold(self.item.totalSpent)
-    ))
+    )
+    if purchaseCount > #history then
+        summary = summary .. " · " .. zo_strformat(
+            GetString(SI_SHOPPING_LIST_HISTORY_RECENT_SHOWN),
+            #history
+        )
+    end
+    self.summary:SetText(summary)
 
     for rowIndex, row in ipairs(self.rows) do
         local historyIndex = #history - self.offset - rowIndex + 1

@@ -37,7 +37,12 @@ local function formatGold(value)
 end
 
 function addon:Initialize()
-    self.data = ShoppingListData:New()
+    local data, message = ShoppingListData:New()
+    if not data then
+        d(message or GetString(SI_SHOPPING_LIST_DATA_MIGRATION_FAILED))
+        return
+    end
+    self.data = data
     self.accessibility = ShoppingListAccessibility
     self.accessibility:Initialize(self)
     self.matcher = ShoppingListMatcher
@@ -74,6 +79,15 @@ function addon:Initialize()
     ShoppingListMainMenu:Initialize(self)
     self:RegisterEvents()
     self:RegisterCommands()
+
+    if self.data.legacyRecoveredCount then
+        d(zo_strformat(
+            GetString(SI_SHOPPING_LIST_LEGACY_RECOVERED),
+            self.data.legacyRecoveredCount
+        ))
+    elseif self.data.legacyRecoveryError then
+        d(self.data.legacyRecoveryError)
+    end
 end
 
 function addon:RegisterEvents()
@@ -204,7 +218,8 @@ function addon:RecordPurchase(itemLink, itemName, quantity, purchase)
     local shoppingLists = self.data:GetShoppingLists()
     local spendingBefore = {}
     for _, list in ipairs(shoppingLists) do
-        spendingBefore[list.id] = tonumber(list.totalSpent) or 0
+        spendingBefore[list.id] = tonumber(list.transactionSpent)
+            or tonumber(list.totalSpent) or 0
     end
     local changes = self.matcher:ApplyPurchase(
         self.data:GetShoppingItems(),
@@ -216,18 +231,19 @@ function addon:RecordPurchase(itemLink, itemName, quantity, purchase)
         return
     end
 
-    for _, change in ipairs(changes) do
-        self.data:RecordPurchase(change.entry, change.quantity, purchase)
-    end
+    purchase.quantity = purchase.quantity or quantity
+    self.data:RecordPurchaseTransaction(changes, purchase)
     for _, list in ipairs(shoppingLists) do
+        local transactionSpent = tonumber(list.transactionSpent)
+            or tonumber(list.totalSpent) or 0
         if list.budget
             and spendingBefore[list.id] <= list.budget
-            and list.totalSpent > list.budget
+            and transactionSpent > list.budget
         then
             d(zo_strformat(
                 GetString(SI_SHOPPING_LIST_CHAT_OVER_BUDGET),
                 list.name,
-                formatGold(list.totalSpent - list.budget)
+                formatGold(transactionSpent - list.budget)
             ))
         end
     end

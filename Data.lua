@@ -3,7 +3,18 @@ ShoppingListData = {}
 local Data = ShoppingListData
 local DEFAULT_LIST_NAME = GetString(SI_SHOPPING_LIST_DEFAULT_LIST_NAME)
 local MAX_DELETED_ACTIONS = 20
-local MAX_NOTE_LENGTH = 2000
+local MAX_NOTE_LENGTH = ShoppingListModel.MAX_NOTE_LENGTH
+local CURRENT_SCHEMA_VERSION = 3
+local MAX_RECOVERY_SNAPSHOTS = 5
+local MAX_BACKUP_LISTS = ShoppingListModel.MAX_LISTS
+local MAX_BACKUP_ITEMS = 100000
+local MAX_HISTORY_PER_ITEM = ShoppingListModel.MAX_PURCHASE_HISTORY
+local MAX_BACKUP_HISTORY_PER_ITEM = 10000
+local MAX_NAME_LENGTH = ShoppingListModel.MAX_NAME_LENGTH
+local MAX_LINK_LENGTH = ShoppingListModel.MAX_LINK_LENGTH
+local MAX_QUANTITY = ShoppingListModel.MAX_QUANTITY
+local MAX_U32 = ShoppingListModel.MAX_SET_OR_ITEM_ID
+local MAX_SAFE_INTEGER = 9007199254740991
 local VALID_FILTERS = {
     all = true,
     needed = true,
@@ -13,11 +24,20 @@ local VALID_FILTERS = {
 }
 
 local defaults = {
+    schemaVersion = CURRENT_SCHEMA_VERSION,
     nextItemId = 1,
     nextListId = 2,
+    nextTransactionId = 1,
+    purchaseTransactions = {},
+    language = GetCVar and GetCVar("language.2") or "",
     selectedListId = 1,
     archivedLists = {},
     deletedActions = {},
+    recovery = {
+        nextId = 1,
+        snapshots = {},
+    },
+    legacyRecovery = {},
     lists = {
         {
             id = 1,
@@ -25,6 +45,7 @@ local defaults = {
             note = "",
             items = {},
             totalSpent = 0,
+            transactionSpent = 0,
             tripActive = true,
         },
     },
@@ -48,6 +69,7 @@ local defaults = {
 }
 
 Data.MAX_NOTE_LENGTH = MAX_NOTE_LENGTH
+Data.CURRENT_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION
 
 local function normalizeName(name)
     name = zo_strtrim(name or "")
@@ -154,11 +176,17 @@ function Data:New()
         defaults,
         GetWorldName()
     )
-    data:Migrate()
+    local ok, message = data:Migrate()
+    if not ok then
+        return nil, message
+    end
+    data:RecoverLegacyData()
     return data
 end
 
-function Data:Migrate()
+function Data:Normalize()
+    local currentLanguage = GetCVar and GetCVar("language.2") or ""
+    local languageChanged = self.saved.language ~= currentLanguage
     if type(self.saved.items) == "table" then
         self.saved.lists = {
             {
@@ -179,6 +207,7 @@ function Data:Migrate()
                 name = DEFAULT_LIST_NAME,
                 items = {},
                 totalSpent = 0,
+                transactionSpent = 0,
             },
         }
         self.saved.selectedListId = 1
@@ -190,6 +219,12 @@ function Data:Migrate()
     end
     if type(self.saved.deletedActions) ~= "table" then
         self.saved.deletedActions = {}
+    end
+    if type(self.saved.purchaseTransactions) ~= "table" then
+        self.saved.purchaseTransactions = {}
+    end
+    while #self.saved.purchaseTransactions > ShoppingListModel.MAX_PURCHASE_TRANSACTIONS do
+        table.remove(self.saved.purchaseTransactions, 1)
     end
     while #self.saved.deletedActions > MAX_DELETED_ACTIONS do
         table.remove(self.saved.deletedActions, 1)
@@ -238,12 +273,35 @@ function Data:Migrate()
             for _, item in ipairs(list.items) do
                 item.id = tonumber(item.id) or (highestItemId + 1)
                 highestItemId = math.max(highestItemId, item.id)
-                item.normalizedName = item.normalizedName or normalizeName(item.name)
+                if languageChanged and item.itemLink and item.itemLink ~= "" then
+                    local linkedName = zo_strtrim(GetItemLinkName(item.itemLink) or "")
+                    if linkedName ~= "" then
+                        item.name = zo_strformat(SI_TOOLTIP_ITEM_NAME, linkedName)
+                        item.nameHash = nil
+                    end
+                end
+                item.normalizedName = normalizeName(item.name)
                 item.note = normalizeNote(item.note)
                 item.desired = math.max(1, tonumber(item.desired) or 1)
                 item.purchased = math.max(0, tonumber(item.purchased) or 0)
-                item.match = item.match or {}
+                item.match = ShoppingListModel:NormalizeMatchingRule(item.match, true)
+                if languageChanged and item.itemLink and item.itemLink ~= "" then
+                    local details = readLinkDetails(item.itemLink)
+                    item.itemId = details.itemId or item.itemId
+                    if item.match.setId or item.match.setName then
+                        item.match.setId = details.setId
+                        item.match.setName = details.setName
+                        item.match.normalizedSetName = details.normalizedSetName
+                    end
+                end
                 item.purchaseHistory = type(item.purchaseHistory) == "table" and item.purchaseHistory or {}
+                item.purchaseCount = math.max(
+                    #item.purchaseHistory,
+                    math.floor(tonumber(item.purchaseCount) or 0)
+                )
+                while #item.purchaseHistory > MAX_HISTORY_PER_ITEM do
+                    table.remove(item.purchaseHistory, 1)
+                end
                 item.totalSpent = math.max(0, tonumber(item.totalSpent) or 0)
                 item.pricedQuantity = math.max(0, tonumber(item.pricedQuantity) or 0)
                 item.maxUnitPrice = math.floor(math.max(0, tonumber(item.maxUnitPrice) or 0))
@@ -251,15 +309,13 @@ function Data:Migrate()
                     item.maxUnitPrice = nil
                 end
                 itemSpending = itemSpending + item.totalSpent
-                local rule = item.match
-                if rule.setName and not rule.normalizedSetName then
-                    rule.normalizedSetName = normalizeName(rule.setName)
-                end
-                rule.qualityMode = rule.qualityMode or "any"
-                rule.levelMode = rule.levelMode or "any"
                 item.completed = item.completed == true or item.purchased >= item.desired
             end
             list.totalSpent = math.max(0, tonumber(list.totalSpent) or 0, itemSpending)
+            list.transactionSpent = math.max(
+                list.totalSpent,
+                tonumber(list.transactionSpent) or list.totalSpent
+            )
             list.budget = math.floor(math.max(0, tonumber(list.budget) or 0))
             if list.budget == 0 then
                 list.budget = nil
@@ -269,13 +325,670 @@ function Data:Migrate()
 
     normalizeLists(self.saved.lists, false)
     normalizeLists(self.saved.archivedLists, true)
+    self.saved.language = currentLanguage
 
     self.saved.nextListId = math.max(tonumber(self.saved.nextListId) or 1, highestListId + 1)
     self.saved.nextItemId = math.max(tonumber(self.saved.nextItemId) or 1, highestItemId + 1)
+    local highestTransactionId = 0
+    for _, transaction in ipairs(self.saved.purchaseTransactions) do
+        highestTransactionId = math.max(
+            highestTransactionId,
+            tonumber(transaction.id) or 0
+        )
+    end
+    self.saved.nextTransactionId = math.max(
+        tonumber(self.saved.nextTransactionId) or 1,
+        highestTransactionId + 1
+    )
     if not self:FindList(self.saved.selectedListId) then
         self.saved.selectedListId = self.saved.lists[1].id
     end
     self:EnsureActiveTripList()
+end
+
+local migrations = {
+    [1] = function(candidate)
+        candidate:Normalize()
+        candidate.saved.schemaVersion = 2
+    end,
+    [2] = function(candidate)
+        candidate:Normalize()
+        candidate.saved.schemaVersion = 3
+    end,
+}
+
+local function isFiniteNumber(value, minimum, maximum)
+    return type(value) == "number"
+        and value == value
+        and value ~= math.huge
+        and value ~= -math.huge
+        and (minimum == nil or value >= minimum)
+        and (maximum == nil or value <= maximum)
+end
+
+local function isWholeNumber(value, minimum, maximum)
+    return isFiniteNumber(value, minimum, maximum) and value == math.floor(value)
+end
+
+local function isBoundedString(value, maximum, allowEmpty)
+    return type(value) == "string"
+        and #value <= maximum
+        and (allowEmpty or zo_strtrim(value) ~= "")
+end
+
+local function isSequentialArray(value, maximum)
+    if type(value) ~= "table" then
+        return false
+    end
+    local count = 0
+    local highest = 0
+    for key in pairs(value) do
+        if not isWholeNumber(key, 1, maximum) then
+            return false
+        end
+        count = count + 1
+        highest = math.max(highest, key)
+    end
+    return count == highest and highest <= maximum
+end
+
+local function optionalBoolean(value)
+    return value == nil or type(value) == "boolean"
+end
+
+local function optionalWholeNumber(value, minimum, maximum)
+    return value == nil or isWholeNumber(value, minimum, maximum)
+end
+
+local function optionalFiniteNumber(value, minimum, maximum)
+    return value == nil or isFiniteNumber(value, minimum, maximum)
+end
+
+local function optionalString(value, maximum)
+    return value == nil or isBoundedString(value, maximum, true)
+end
+
+local function validateMatch(rule)
+    return ShoppingListModel:IsValidMatchingRule(rule)
+end
+
+local function validateHistory(history)
+    if not isSequentialArray(history, MAX_BACKUP_HISTORY_PER_ITEM) then
+        return false
+    end
+    for _, purchase in ipairs(history) do
+        if type(purchase) ~= "table"
+            or not optionalWholeNumber(purchase.timestamp, 0, MAX_SAFE_INTEGER)
+            or not optionalFiniteNumber(purchase.quantity, 0, MAX_QUANTITY)
+            or not optionalWholeNumber(purchase.totalPrice, 0, MAX_SAFE_INTEGER)
+            or not optionalFiniteNumber(purchase.unitPrice, 0, MAX_SAFE_INTEGER)
+            or not optionalFiniteNumber(purchase.listingQuantity, 1, MAX_QUANTITY)
+            or not optionalWholeNumber(purchase.listingPrice, 0, MAX_SAFE_INTEGER)
+            or not optionalWholeNumber(purchase.currencyType, 0, 65535)
+            or not optionalString(purchase.sellerName, MAX_NAME_LENGTH)
+            or not optionalString(purchase.guildName, MAX_NAME_LENGTH)
+            or not optionalString(purchase.itemName, MAX_NAME_LENGTH)
+            or not optionalString(purchase.itemLink, MAX_LINK_LENGTH)
+            or not optionalWholeNumber(purchase.transactionId, 1, MAX_U32)
+            or not optionalWholeNumber(purchase.transactionPrice, 0, MAX_SAFE_INTEGER)
+        then
+            return false
+        end
+    end
+    return true
+end
+
+local function validateItem(item, itemIds)
+    if type(item) ~= "table"
+        or not isWholeNumber(item.id, 1, MAX_U32)
+        or itemIds[item.id]
+        or not isBoundedString(item.name, MAX_NAME_LENGTH, false)
+        or not optionalString(item.normalizedName, MAX_NAME_LENGTH)
+        or not optionalString(item.note, MAX_NOTE_LENGTH)
+        or not optionalString(item.itemLink, MAX_LINK_LENGTH)
+        or not optionalWholeNumber(item.itemId, 1, MAX_U32)
+        or not isWholeNumber(item.desired, 1, MAX_QUANTITY)
+        or not isWholeNumber(item.purchased or 0, 0, MAX_QUANTITY)
+        or not optionalBoolean(item.completed)
+        or not optionalWholeNumber(item.totalSpent, 0, MAX_SAFE_INTEGER)
+        or not optionalWholeNumber(item.purchaseCount, 0, MAX_SAFE_INTEGER)
+        or not optionalFiniteNumber(item.pricedQuantity, 0, MAX_QUANTITY)
+        or not optionalWholeNumber(item.maxUnitPrice, 1, ShoppingListModel.MAX_PRICE)
+        or not validateMatch(item.match)
+        or not validateHistory(item.purchaseHistory or {})
+    then
+        return false
+    end
+    local hashType = type(item.nameHash)
+    if item.nameHash ~= nil and hashType ~= "number" and hashType ~= "string" then
+        return false
+    end
+    if hashType == "number" and not isFiniteNumber(item.nameHash) then
+        return false
+    end
+    if hashType == "string" and #item.nameHash > MAX_NAME_LENGTH then
+        return false
+    end
+    itemIds[item.id] = true
+    return true
+end
+
+local function validateList(list, archived, listIds, itemIds, totals)
+    if type(list) ~= "table"
+        or not isWholeNumber(list.id, 1, MAX_U32)
+        or listIds[list.id]
+        or not isBoundedString(list.name, MAX_NAME_LENGTH, false)
+        or not optionalString(list.note, MAX_NOTE_LENGTH)
+        or not isSequentialArray(list.items, MAX_BACKUP_ITEMS)
+        or not optionalWholeNumber(list.totalSpent, 0, MAX_SAFE_INTEGER)
+        or not optionalWholeNumber(list.transactionSpent, 0, MAX_SAFE_INTEGER)
+        or not optionalWholeNumber(list.budget, 1, ShoppingListModel.MAX_PRICE)
+        or not optionalBoolean(list.tripActive)
+    then
+        return false
+    end
+    if archived then
+        if not optionalWholeNumber(list.archivedAt, 0, MAX_SAFE_INTEGER) then
+            return false
+        end
+    elseif list.archivedAt ~= nil then
+        return false
+    end
+
+    listIds[list.id] = true
+    totals.items = totals.items + #list.items
+    if totals.items > MAX_BACKUP_ITEMS then
+        return false
+    end
+    for _, item in ipairs(list.items) do
+        if not validateItem(item, itemIds) then
+            return false
+        end
+    end
+    return true
+end
+
+local function validateTransactions(transactions)
+    if not isSequentialArray(
+        transactions,
+        ShoppingListModel.MAX_PURCHASE_TRANSACTIONS
+    ) then
+        return false
+    end
+    local ids = {}
+    for _, transaction in ipairs(transactions) do
+        if type(transaction) ~= "table"
+            or not isWholeNumber(transaction.id, 1, MAX_U32)
+            or ids[transaction.id]
+            or not isWholeNumber(transaction.timestamp, 0, MAX_SAFE_INTEGER)
+            or not isWholeNumber(transaction.quantity, 1, MAX_QUANTITY)
+            or not isWholeNumber(transaction.totalPrice, 0, MAX_SAFE_INTEGER)
+            or not optionalFiniteNumber(transaction.unitPrice, 0, MAX_SAFE_INTEGER)
+            or not optionalWholeNumber(transaction.currencyType, 0, 65535)
+            or not optionalString(transaction.sellerName, MAX_NAME_LENGTH)
+            or not optionalString(transaction.guildName, MAX_NAME_LENGTH)
+            or not optionalString(transaction.itemName, MAX_NAME_LENGTH)
+            or not optionalString(transaction.itemLink, MAX_LINK_LENGTH)
+            or not isSequentialArray(
+                transaction.allocations,
+                MAX_BACKUP_ITEMS
+            )
+        then
+            return false
+        end
+        ids[transaction.id] = true
+        for _, allocation in ipairs(transaction.allocations) do
+            if type(allocation) ~= "table"
+                or not isWholeNumber(allocation.listId, 1, MAX_U32)
+                or not isWholeNumber(allocation.itemId, 1, MAX_U32)
+                or not isWholeNumber(allocation.quantity, 1, MAX_QUANTITY)
+                or not isWholeNumber(allocation.allocatedPrice, 0, MAX_SAFE_INTEGER)
+                or not isWholeNumber(allocation.transactionPrice, 0, MAX_SAFE_INTEGER)
+            then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+local function validateLegacyRecovery(value)
+    if value == nil then
+        return true
+    end
+    if type(value) ~= "table" then
+        return false
+    end
+    local imports = value.imports
+    if imports == nil then
+        return true
+    end
+    if type(imports) ~= "table" then
+        return false
+    end
+    local count = 0
+    for fingerprint, entry in pairs(imports) do
+        count = count + 1
+        if count > 20
+            or not isBoundedString(fingerprint, 128, false)
+            or type(entry) ~= "table"
+            or not isWholeNumber(entry.recoveredAt, 0, MAX_SAFE_INTEGER)
+            or not isWholeNumber(entry.listCount, 0, MAX_BACKUP_LISTS)
+            or not isBoundedString(entry.source, 128, false)
+            or not isBoundedString(entry.world, 256, false)
+            or not isBoundedString(
+                entry.backupCode,
+                ShoppingListBackup.MAX_CODE_LENGTH,
+                false
+            )
+            or string.sub(entry.backupCode, 1, 5) ~= "SLB1:"
+        then
+            return false
+        end
+    end
+    return true
+end
+
+function Data:ValidateBackupSnapshot(snapshot)
+    if type(snapshot) ~= "table"
+        or not isSequentialArray(snapshot.lists, MAX_BACKUP_LISTS)
+        or #snapshot.lists == 0
+        or not isSequentialArray(snapshot.archivedLists or {}, MAX_BACKUP_LISTS)
+        or #snapshot.lists + #(snapshot.archivedLists or {}) > MAX_BACKUP_LISTS
+        or type(snapshot.settings) ~= "table"
+        or not isSequentialArray(snapshot.deletedActions or {}, MAX_DELETED_ACTIONS)
+        or not validateTransactions(snapshot.purchaseTransactions or {})
+        or not optionalWholeNumber(snapshot.schemaVersion, 1, CURRENT_SCHEMA_VERSION)
+        or not optionalString(snapshot.language, 16)
+        or snapshot.recovery ~= nil
+        or not validateLegacyRecovery(snapshot.legacyRecovery)
+    then
+        return false
+    end
+
+    local listIds = {}
+    local activeListIds = {}
+    local itemIds = {}
+    local totals = { items = 0 }
+    for _, list in ipairs(snapshot.lists) do
+        if not validateList(list, false, listIds, itemIds, totals) then
+            return false
+        end
+        activeListIds[list.id] = true
+    end
+    for _, list in ipairs(snapshot.archivedLists or {}) do
+        if not validateList(list, true, listIds, itemIds, totals) then
+            return false
+        end
+    end
+
+    local deletedListCount = 0
+    for _, action in ipairs(snapshot.deletedActions or {}) do
+        if type(action) ~= "table"
+            or (action.kind ~= "list" and action.kind ~= "items")
+            or not optionalWholeNumber(action.deletedAt, 0, MAX_SAFE_INTEGER)
+        then
+            return false
+        end
+        if action.kind == "list" then
+            deletedListCount = deletedListCount + 1
+            if deletedListCount + #snapshot.lists + #(snapshot.archivedLists or {})
+                    > MAX_BACKUP_LISTS
+                or not isWholeNumber(action.index, 1, MAX_BACKUP_LISTS)
+                or not validateList(action.list, false, listIds, itemIds, totals)
+            then
+                return false
+            end
+        else
+            if not isWholeNumber(action.listId, 1, MAX_U32)
+                or not isSequentialArray(action.items, MAX_BACKUP_ITEMS)
+            then
+                return false
+            end
+            for _, removed in ipairs(action.items) do
+                if type(removed) ~= "table"
+                    or not isWholeNumber(removed.index, 1, MAX_BACKUP_ITEMS)
+                    or not validateItem(removed.item, itemIds)
+                then
+                    return false
+                end
+                totals.items = totals.items + 1
+                if totals.items > MAX_BACKUP_ITEMS then
+                    return false
+                end
+            end
+        end
+    end
+
+    local highestListId = 0
+    for id in pairs(listIds) do
+        highestListId = math.max(highestListId, id)
+    end
+    local highestItemId = 0
+    for id in pairs(itemIds) do
+        highestItemId = math.max(highestItemId, id)
+    end
+    if not isWholeNumber(snapshot.selectedListId, 1, MAX_U32)
+        or not activeListIds[snapshot.selectedListId]
+        or not isWholeNumber(snapshot.nextListId, highestListId + 1, MAX_U32)
+        or not isWholeNumber(snapshot.nextItemId, highestItemId + 1, MAX_U32)
+        or not isWholeNumber(snapshot.nextTransactionId or 1, 1, MAX_U32)
+    then
+        return false
+    end
+    for _, transaction in ipairs(snapshot.purchaseTransactions or {}) do
+        if (snapshot.nextTransactionId or 1) <= transaction.id then
+            return false
+        end
+    end
+
+    local settings = snapshot.settings
+    if not optionalBoolean(settings.autoOpen)
+        or not optionalBoolean(settings.closeWithStore)
+        or not optionalBoolean(settings.showCompleted)
+        or not optionalBoolean(settings.announcePurchases)
+        or (settings.panelSide ~= nil and settings.panelSide ~= "left" and settings.panelSide ~= "right")
+        or (settings.itemFilter ~= nil and not VALID_FILTERS[settings.itemFilter])
+        or not optionalBoolean(settings.filterMigrated)
+        or not optionalBoolean(settings.multiListTrips)
+        or not optionalFiniteNumber(settings.fontScale, 0.9, 1.4)
+        or not optionalBoolean(settings.highContrast)
+        or not optionalBoolean(settings.nonColorIndicators)
+        or (settings.window ~= nil and type(settings.window) ~= "table")
+    then
+        return false
+    end
+    if settings.window
+        and (not optionalFiniteNumber(settings.window.width, 350, 900)
+            or not optionalFiniteNumber(settings.window.height, 400, 900)
+            or not optionalFiniteNumber(settings.window.left, -100000, 100000)
+            or not optionalFiniteNumber(settings.window.top, -100000, 100000))
+    then
+        return false
+    end
+    return true
+end
+
+local function validateCandidate(candidate)
+    if type(candidate) ~= "table"
+        or type(candidate.lists) ~= "table"
+        or #candidate.lists == 0
+        or type(candidate.archivedLists) ~= "table"
+        or type(candidate.settings) ~= "table"
+    then
+        return false
+    end
+    for _, collection in ipairs({ candidate.lists, candidate.archivedLists }) do
+        for _, list in ipairs(collection) do
+            if type(list) ~= "table" or type(list.items) ~= "table" then
+                return false
+            end
+            for _, item in ipairs(list.items) do
+                if type(item) ~= "table" or type(item.name) ~= "string" then
+                    return false
+                end
+            end
+        end
+    end
+    return true
+end
+
+function Data:PrepareCandidate(source)
+    local candidateSaved = deepCopy(source)
+    if type(candidateSaved) ~= "table" then
+        return nil, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
+    end
+
+    local version = tonumber(candidateSaved.schemaVersion) or 1
+    if version ~= math.floor(version) or version < 1 or version > CURRENT_SCHEMA_VERSION then
+        return nil, GetString(SI_SHOPPING_LIST_DATA_SCHEMA_UNSUPPORTED)
+    end
+
+    local candidate = setmetatable({ saved = candidateSaved }, { __index = self })
+    while version < CURRENT_SCHEMA_VERSION do
+        local migrate = migrations[version]
+        if not migrate then
+            return nil, GetString(SI_SHOPPING_LIST_DATA_MIGRATION_FAILED)
+        end
+        local ok = pcall(migrate, candidate)
+        if not ok then
+            return nil, GetString(SI_SHOPPING_LIST_DATA_MIGRATION_FAILED)
+        end
+        local nextVersion = tonumber(candidate.saved.schemaVersion)
+        if not nextVersion or nextVersion <= version then
+            return nil, GetString(SI_SHOPPING_LIST_DATA_MIGRATION_FAILED)
+        end
+        version = nextVersion
+    end
+
+    local ok = pcall(function() candidate:Normalize() end)
+    if not ok or not validateCandidate(candidate.saved) then
+        return nil, GetString(SI_SHOPPING_LIST_DATA_MIGRATION_FAILED)
+    end
+    candidate.saved.schemaVersion = CURRENT_SCHEMA_VERSION
+    return candidate.saved
+end
+
+function Data:GetPersistableData(source)
+    local snapshot = copyPersistable(source or self.saved)
+    if not snapshot then
+        return nil
+    end
+    snapshot.recovery = nil
+    return snapshot
+end
+
+function Data:CreateSafetySnapshot(kind, source)
+    local snapshot = self:GetPersistableData(source)
+    if not snapshot then
+        return false, GetString(SI_SHOPPING_LIST_SAFETY_CREATE_FAILED)
+    end
+    local code = ShoppingListBackup.Encode(snapshot)
+    if not code then
+        return false, GetString(SI_SHOPPING_LIST_SAFETY_CREATE_FAILED)
+    end
+
+    local recovery = self.saved.recovery
+    if type(recovery) ~= "table" then
+        recovery = {}
+        self.saved.recovery = recovery
+    end
+    recovery.nextId = math.max(1, math.floor(tonumber(recovery.nextId) or 1))
+    recovery.snapshots = type(recovery.snapshots) == "table" and recovery.snapshots or {}
+    recovery.snapshots[#recovery.snapshots + 1] = {
+        id = recovery.nextId,
+        kind = tostring(kind or "manual"),
+        createdAt = GetTimeStamp(),
+        sourceSchema = tonumber(snapshot.schemaVersion) or 1,
+        addonVersion = GravvyShoppingList and GravvyShoppingList.GetBuildVersion
+            and GravvyShoppingList:GetBuildVersion() or 0,
+        world = GetWorldName(),
+        code = code,
+    }
+    recovery.nextId = recovery.nextId + 1
+    while #recovery.snapshots > MAX_RECOVERY_SNAPSHOTS do
+        table.remove(recovery.snapshots, 1)
+    end
+    return true
+end
+
+function Data:GetSafetySnapshots()
+    local recovery = self.saved.recovery
+    return type(recovery) == "table" and type(recovery.snapshots) == "table"
+        and recovery.snapshots or {}
+end
+
+function Data:Migrate()
+    local version = tonumber(self.saved.schemaVersion) or 1
+    if version < CURRENT_SCHEMA_VERSION then
+        local saved, message = self:CreateSafetySnapshot("pre_migration")
+        if not saved then
+            return false, message
+        end
+    end
+
+    local candidate, message = self:PrepareCandidate(self.saved)
+    if not candidate then
+        return false, message
+    end
+    replaceTable(self.saved, candidate)
+    return true
+end
+
+local function isPristineDefault(saved)
+    if #saved.lists ~= 1 or #saved.archivedLists ~= 0 then
+        return false
+    end
+    local list = saved.lists[1]
+    return list.name == DEFAULT_LIST_NAME
+        and #list.items == 0
+        and (list.note or "") == ""
+        and (tonumber(list.totalSpent) or 0) == 0
+end
+
+local function hasLegacyListContent(saved)
+    if type(saved.items) == "table" and #saved.items > 0 then
+        return true
+    end
+    for _, key in ipairs({ "lists", "archivedLists" }) do
+        local lists = saved[key]
+        if type(lists) == "table" then
+            for _, list in ipairs(lists) do
+                if type(list) == "table" then
+                    local name = zo_strtrim(list.name or "")
+                    if name ~= "" and name ~= DEFAULT_LIST_NAME then
+                        return true
+                    end
+                    if type(list.items) == "table" and #list.items > 0 then
+                        return true
+                    end
+                    if zo_strtrim(list.note or "") ~= ""
+                        or (tonumber(list.totalSpent) or 0) > 0
+                        or (tonumber(list.budget) or 0) > 0
+                    then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+function Data:RecoverLegacyData()
+    local staged = GravvyShoppingListLegacySavedVariables
+    if type(staged) ~= "table" or type(staged.saved) ~= "table" then
+        return false
+    end
+    if not hasLegacyListContent(staged.saved) then
+        return false
+    end
+
+    local sourceCode = ShoppingListBackup.Encode(self:GetPersistableData(staged.saved))
+    if not sourceCode then
+        self.legacyRecoveryError = GetString(SI_SHOPPING_LIST_LEGACY_RECOVERY_FAILED)
+        return false
+    end
+    local fingerprint = tostring(#sourceCode) .. ":" .. string.sub(sourceCode, -32)
+    local legacyRecovery = self.saved.legacyRecovery
+    if type(legacyRecovery) ~= "table" then
+        legacyRecovery = {}
+        self.saved.legacyRecovery = legacyRecovery
+    end
+    legacyRecovery.imports = type(legacyRecovery.imports) == "table"
+        and legacyRecovery.imports or {}
+    if legacyRecovery.imports[fingerprint] then
+        return false
+    end
+
+    local legacy, message = self:PrepareCandidate(staged.saved)
+    if not legacy then
+        self.legacyRecoveryError = message or GetString(SI_SHOPPING_LIST_LEGACY_RECOVERY_FAILED)
+        return false
+    end
+    local snapshotted, snapshotMessage = self:CreateSafetySnapshot("pre_legacy_recovery")
+    if not snapshotted then
+        self.legacyRecoveryError = snapshotMessage
+        return false
+    end
+
+    local candidate = deepCopy(self.saved)
+    local working = setmetatable({ saved = candidate }, { __index = self })
+    local removeDefault = isPristineDefault(candidate)
+    if removeDefault then
+        candidate.lists = {}
+    end
+
+    local recoveredCount = 0
+    local firstRecoveredId
+    local function appendLists(source, archived)
+        local target = archived and candidate.archivedLists or candidate.lists
+        for _, sourceList in ipairs(source) do
+            local list = deepCopy(sourceList)
+            list.id = candidate.nextListId
+            candidate.nextListId = candidate.nextListId + 1
+            list.name = working:GetUniqueListName(list.name)
+            for _, item in ipairs(list.items) do
+                item.id = candidate.nextItemId
+                candidate.nextItemId = candidate.nextItemId + 1
+            end
+            if archived then
+                list.archivedAt = tonumber(list.archivedAt) or GetTimeStamp()
+            else
+                list.archivedAt = nil
+                firstRecoveredId = firstRecoveredId or list.id
+            end
+            target[#target + 1] = list
+            recoveredCount = recoveredCount + 1
+        end
+    end
+
+    local ok = pcall(function()
+        appendLists(legacy.lists, false)
+        appendLists(legacy.archivedLists, true)
+        if #candidate.lists == 0 then
+            candidate.lists[1] = deepCopy(defaults.lists[1])
+            candidate.lists[1].id = candidate.nextListId
+            candidate.nextListId = candidate.nextListId + 1
+        elseif removeDefault and firstRecoveredId then
+            candidate.selectedListId = firstRecoveredId
+        end
+        candidate.legacyRecovery = candidate.legacyRecovery or {}
+        candidate.legacyRecovery.imports = candidate.legacyRecovery.imports or {}
+        candidate.legacyRecovery.imports[fingerprint] = {
+            recoveredAt = GetTimeStamp(),
+            listCount = recoveredCount,
+            source = staged.source or "ShoppingList",
+            world = staged.world or GetWorldName(),
+            backupCode = sourceCode,
+        }
+    end)
+    if not ok then
+        self.legacyRecoveryError = GetString(SI_SHOPPING_LIST_LEGACY_RECOVERY_FAILED)
+        return false
+    end
+
+    local prepared, prepareMessage = self:PrepareCandidate(candidate)
+    if not prepared then
+        self.legacyRecoveryError = prepareMessage
+        return false
+    end
+    replaceTable(self.saved, prepared)
+    self.legacyRecoveredCount = recoveredCount
+    return true
+end
+
+function Data:RestoreSafetySnapshot(id)
+    for _, entry in ipairs(self:GetSafetySnapshots()) do
+        if entry.id == id then
+            local decoded, message = ShoppingListBackup.Decode(entry.code)
+            if not decoded then
+                return false, message
+            end
+            return self:RestoreBackup(decoded)
+        end
+    end
+    return false, GetString(SI_SHOPPING_LIST_SAFETY_MISSING)
 end
 
 function Data:GetItems()
@@ -438,16 +1151,43 @@ function Data:GetUniqueListName(baseName, exceptId)
     local name = baseName
     local suffix = 2
     while self:ListNameExists(name, exceptId) do
-        name = baseName .. " " .. tostring(suffix)
+        local ending = " " .. tostring(suffix)
+        name = string.sub(
+            baseName,
+            1,
+            ShoppingListModel.MAX_NAME_LENGTH - #ending
+        ) .. ending
         suffix = suffix + 1
     end
     return name
+end
+
+function Data:GetStoredListCount()
+    local count = #self.saved.lists + #self.saved.archivedLists
+    for _, action in ipairs(self.saved.deletedActions or {}) do
+        if action.kind == "list" and action.list then
+            count = count + 1
+        end
+    end
+    return count
 end
 
 function Data:AddList(name, note)
     name = zo_strtrim(name or "")
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_ENTER_LIST_NAME)
+    end
+    if #name > ShoppingListModel.MAX_NAME_LENGTH then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NAME_TOO_LONG)
+    end
+    if type(note) ~= "nil" and type(note) ~= "string" then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    if #(note or "") > ShoppingListModel.MAX_NOTE_LENGTH then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    if self:GetStoredListCount() >= ShoppingListModel.MAX_LISTS then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_TOO_MANY_LISTS)
     end
     if self:ListNameExists(name) then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_NAME_EXISTS)
@@ -459,6 +1199,7 @@ function Data:AddList(name, note)
         note = normalizeNote(note),
         items = {},
         totalSpent = 0,
+        transactionSpent = 0,
         budget = nil,
         tripActive = self:IsMultiListTripEnabled(),
     }
@@ -473,13 +1214,19 @@ function Data:ImportList(name, items, note)
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_NO_NAME)
     end
+    if #name > ShoppingListModel.MAX_NAME_LENGTH then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NAME_TOO_LONG)
+    end
     if type(items) ~= "table" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_NO_ITEMS)
     end
     if note ~= nil and type(note) ~= "string" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
     end
-    if #items > 500 then
+    if #(note or "") > ShoppingListModel.MAX_NOTE_LENGTH then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    if #items > ShoppingListModel.MAX_ITEMS_PER_LIST then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_TOO_MANY_ITEMS)
     end
 
@@ -494,17 +1241,26 @@ function Data:ImportList(name, items, note)
         local itemLink = source.itemLink or ""
         local itemNote = source.note or ""
         local maxUnitPrice = source.maxUnitPrice
-        if itemName == "" or not quantity or quantity ~= math.floor(quantity)
-            or quantity < 1 or quantity > 1000000
+        if itemName == "" or #itemName > ShoppingListModel.MAX_NAME_LENGTH
+            or not ShoppingListModel:IsWholeNumber(
+                quantity,
+                1,
+                ShoppingListModel.MAX_QUANTITY
+            )
             or type(itemLink) ~= "string" or type(itemNote) ~= "string"
-            or (source.match ~= nil and type(source.match) ~= "table")
+            or #itemLink > ShoppingListModel.MAX_LINK_LENGTH
+            or #itemNote > ShoppingListModel.MAX_NOTE_LENGTH
+            or not ShoppingListModel:IsValidMatchingRule(source.match)
         then
             return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
         end
         if maxUnitPrice ~= nil then
             maxUnitPrice = tonumber(maxUnitPrice)
-            if not maxUnitPrice or maxUnitPrice ~= math.floor(maxUnitPrice)
-                or maxUnitPrice < 1
+            if not ShoppingListModel:IsWholeNumber(
+                maxUnitPrice,
+                1,
+                ShoppingListModel.MAX_PRICE
+            )
             then
                 return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
             end
@@ -524,8 +1280,13 @@ function Data:ImportList(name, items, note)
             itemLink = itemLink,
             note = itemNote,
             maxUnitPrice = maxUnitPrice,
-            match = source.match and deepCopy(source.match) or nil,
+            match = ShoppingListModel:NormalizeMatchingRule(source.match),
         }
+    end
+
+    local snapshotted, snapshotMessage = self:CreateSafetySnapshot("pre_import")
+    if not snapshotted then
+        return nil, snapshotMessage
     end
 
     local list, createdOrMessage = self:AddListWithItems(
@@ -550,6 +1311,18 @@ function Data:DuplicateList(id, name, note)
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_ENTER_LIST_NAME)
     end
+    if #name > ShoppingListModel.MAX_NAME_LENGTH then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NAME_TOO_LONG)
+    end
+    local copiedNote = note ~= nil and note or source.note or ""
+    if type(copiedNote) ~= "string"
+        or #copiedNote > ShoppingListModel.MAX_NOTE_LENGTH
+    then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    if self:GetStoredListCount() >= ShoppingListModel.MAX_LISTS then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_TOO_MANY_LISTS)
+    end
     if self:ListNameExists(name) then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_NAME_EXISTS)
     end
@@ -557,9 +1330,10 @@ function Data:DuplicateList(id, name, note)
     local copy = {
         id = self.saved.nextListId,
         name = name,
-        note = normalizeNote(note ~= nil and note or source.note),
+        note = normalizeNote(copiedNote),
         items = {},
         totalSpent = 0,
+        transactionSpent = 0,
         budget = source.budget,
         tripActive = self:IsMultiListTripEnabled(),
     }
@@ -583,6 +1357,7 @@ function Data:DuplicateList(id, name, note)
             purchased = 0,
             completed = false,
             purchaseHistory = {},
+            purchaseCount = 0,
             totalSpent = 0,
             pricedQuantity = 0,
             maxUnitPrice = item.maxUnitPrice,
@@ -606,6 +1381,9 @@ function Data:RenameList(id, name)
     if name == "" then
         return false, GetString(SI_SHOPPING_LIST_ERROR_ENTER_LIST_NAME)
     end
+    if #name > ShoppingListModel.MAX_NAME_LENGTH then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_NAME_TOO_LONG)
+    end
     if self:ListNameExists(name, id) then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_NAME_EXISTS)
     end
@@ -618,7 +1396,10 @@ function Data:UpdateListNote(id, note)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
-    list.note = normalizeNote(note)
+    if type(note) ~= "string" or #note > ShoppingListModel.MAX_NOTE_LENGTH then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    list.note = note
     return true
 end
 
@@ -628,7 +1409,15 @@ function Data:UpdateListBudget(id, value)
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
 
-    local budget = math.floor(math.max(0, tonumber(value) or 0))
+    local budget = tonumber(value)
+    if budget ~= nil and budget ~= 0 and not ShoppingListModel:IsWholeNumber(
+        budget,
+        1,
+        ShoppingListModel.MAX_PRICE
+    ) then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_PRICE)
+    end
+    budget = budget or 0
     list.budget = budget > 0 and budget or nil
     return true
 end
@@ -684,6 +1473,7 @@ function Data:ArchiveList(id)
             note = "",
             items = {},
             totalSpent = 0,
+            transactionSpent = 0,
             budget = nil,
         }
         self.saved.nextListId = self.saved.nextListId + 1
@@ -701,7 +1491,6 @@ function Data:RestoreList(id)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_ARCHIVED_LIST_MISSING)
     end
-
     if self:ListNameExists(list.name, list.id) then
         list.name = self:GetUniqueListName(zo_strformat(
             GetString(SI_SHOPPING_LIST_RESTORED_LIST_NAME),
@@ -720,33 +1509,52 @@ function Data:GetSettings()
 end
 
 function Data:GetBackupData()
-    local snapshot = copyPersistable(self.saved)
+    local snapshot = self:GetPersistableData(self.saved)
     return snapshot or {}
 end
 
 function Data:RestoreBackup(snapshot)
-    if type(snapshot) ~= "table"
-        or type(snapshot.lists) ~= "table"
-        or type(snapshot.settings) ~= "table"
+    if type(snapshot) ~= "table" then
+        return false, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
+    end
+    local sourceVersion = tonumber(snapshot.schemaVersion) or 1
+    if sourceVersion == CURRENT_SCHEMA_VERSION
+        and not self:ValidateBackupSnapshot(snapshot)
     then
         return false, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
     end
 
+    local candidate, candidateMessage = self:PrepareCandidate(snapshot)
+    if not candidate or not self:ValidateBackupSnapshot(candidate) then
+        return false, candidateMessage or GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
+    end
+    local snapshotted, snapshotMessage = self:CreateSafetySnapshot("pre_restore")
+    if not snapshotted then
+        return false, snapshotMessage
+    end
+
     local previous = deepCopy(self.saved)
     local settingsReference = self.saved.settings
-    local function apply(source)
-        local restored = deepCopy(source)
+    local recoveryReference = self.saved.recovery
+    local legacyRecoveryReference = self.saved.legacyRecovery
+    local function apply(restored)
+        restored = deepCopy(restored)
         local restoredSettings = restored.settings or {}
         restored.settings = nil
+        restored.recovery = recoveryReference
+        restored.legacyRecovery = legacyRecoveryReference
         replaceTable(self.saved, restored)
         replaceTable(settingsReference, restoredSettings)
         self.saved.settings = settingsReference
-        self:Migrate()
     end
 
-    local ok = pcall(apply, snapshot)
+    local ok = pcall(apply, candidate)
     if not ok then
-        pcall(apply, previous)
+        local previousSettings = previous.settings or {}
+        previous.settings = nil
+        replaceTable(self.saved, previous)
+        replaceTable(settingsReference, previousSettings)
+        self.saved.settings = settingsReference
         return false, GetString(SI_SHOPPING_LIST_BACKUP_ERROR_DATA)
     end
     return true
@@ -814,14 +1622,51 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
 
+    if #list.items >= ShoppingListModel.MAX_ITEMS_PER_LIST then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_FULL)
+    end
+
+    if type(name) ~= "string" and name ~= nil then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_ENTER_ITEM_NAME)
+    end
+    if type(itemLink) ~= "string" and itemLink ~= nil then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LINK)
+    end
+    if type(note) ~= "string" and note ~= nil then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+
     name = zo_strtrim(name or "")
-    quantity = math.max(1, math.floor(tonumber(quantity) or 1))
+    itemLink = itemLink or ""
+    quantity = tonumber(quantity) or 1
 
     if name == "" and itemLink and itemLink ~= "" then
         name = GetItemLinkName(itemLink)
     end
     if name == "" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_ENTER_ITEM_NAME)
+    end
+    if #name > ShoppingListModel.MAX_NAME_LENGTH then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_ITEM_NAME_TOO_LONG)
+    end
+    if #itemLink > ShoppingListModel.MAX_LINK_LENGTH then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LINK_TOO_LONG)
+    end
+    if #(note or "") > ShoppingListModel.MAX_NOTE_LENGTH then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    if not ShoppingListModel:IsWholeNumber(
+        quantity,
+        1,
+        ShoppingListModel.MAX_QUANTITY
+    ) then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_QUANTITY)
+    end
+    if itemLink ~= "" then
+        local _, _, linkType = ZO_LinkHandler_ParseLink(itemLink)
+        if linkType ~= ITEM_LINK_TYPE then
+            return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LINK)
+        end
     end
 
     local details = readLinkDetails(itemLink)
@@ -831,12 +1676,13 @@ function Data:AddItemToList(listId, name, quantity, itemLink, nameHash, note)
         note = normalizeNote(note),
         normalizedName = normalizeName(name),
         nameHash = nameHash,
-        itemLink = itemLink or "",
+        itemLink = itemLink,
         itemId = details.itemId,
         desired = quantity,
         purchased = 0,
         completed = false,
         purchaseHistory = {},
+        purchaseCount = 0,
         totalSpent = 0,
         pricedQuantity = 0,
         maxUnitPrice = nil,
@@ -863,10 +1709,31 @@ function Data:AddItemsToList(listId, sources)
     if not list then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if type(sources) ~= "table" then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
+    end
+    if #list.items + #sources > ShoppingListModel.MAX_ITEMS_PER_LIST then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_FULL)
+    end
 
     local firstItemId = self.saved.nextItemId
     local firstIndex = #list.items + 1
     local items = {}
+
+    for _, source in ipairs(sources) do
+        if type(source) ~= "table"
+            or not ShoppingListModel:IsValidMatchingRule(source.match)
+        then
+            return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_MATCH)
+        end
+        if source.maxUnitPrice ~= nil and not ShoppingListModel:IsWholeNumber(
+            tonumber(source.maxUnitPrice),
+            1,
+            ShoppingListModel.MAX_PRICE
+        ) then
+            return nil, GetString(SI_SHOPPING_LIST_ERROR_INVALID_PRICE)
+        end
+    end
 
     for _, source in ipairs(sources) do
         local item, message = self:AddItemToList(
@@ -886,7 +1753,7 @@ function Data:AddItemsToList(listId, sources)
         end
 
         if source.match then
-            item.match = deepCopy(source.match)
+            item.match = ShoppingListModel:NormalizeMatchingRule(source.match)
         end
         if source.maxUnitPrice then
             item.maxUnitPrice = source.maxUnitPrice
@@ -898,6 +1765,11 @@ function Data:AddItemsToList(listId, sources)
 end
 
 function Data:AddListWithItems(name, note, sources, selectList)
+    if type(sources) ~= "table"
+        or #sources > ShoppingListModel.MAX_ITEMS_PER_LIST
+    then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_FULL)
+    end
     local previousListId = self.saved.selectedListId
     local firstListId = self.saved.nextListId
     local list, message = self:AddList(name, note)
@@ -939,36 +1811,64 @@ function Data:UpdateItem(id, values)
         return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
     end
 
-    item.desired = math.max(1, math.floor(tonumber(values.desired) or item.desired))
-    item.note = normalizeNote(values.note ~= nil and values.note or item.note)
-    local maxUnitPrice = math.floor(math.max(0, tonumber(values.maxUnitPrice) or 0))
-    item.maxUnitPrice = maxUnitPrice > 0 and maxUnitPrice or nil
+    values = values or {}
+    local desired = tonumber(values.desired ~= nil and values.desired or item.desired)
+    if not ShoppingListModel:IsWholeNumber(
+        desired,
+        1,
+        ShoppingListModel.MAX_QUANTITY
+    ) then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_QUANTITY)
+    end
+    local note = values.note ~= nil and values.note or item.note or ""
+    if type(note) ~= "string" or #note > ShoppingListModel.MAX_NOTE_LENGTH then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
+    end
+    local maxUnitPrice = tonumber(values.maxUnitPrice)
+    if maxUnitPrice == nil or maxUnitPrice == 0 then
+        maxUnitPrice = nil
+    elseif not ShoppingListModel:IsWholeNumber(
+        maxUnitPrice,
+        1,
+        ShoppingListModel.MAX_PRICE
+    ) then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_PRICE)
+    end
 
-    local rule = item.match or {}
-    item.match = rule
+    local existingRule = item.match or {}
+    local ruleSource = {
+        traitType = values.traitType ~= nil and values.traitType or existingRule.traitType,
+        qualityMode = values.qualityMode or existingRule.qualityMode or "any",
+        quality = values.quality ~= nil and tonumber(values.quality) or existingRule.quality,
+        levelMode = values.levelMode or existingRule.levelMode or "any",
+        level = values.level ~= nil and tonumber(values.level) or existingRule.level,
+        championPoints = values.championPoints ~= nil
+            and tonumber(values.championPoints) or existingRule.championPoints,
+    }
 
-    local setName = zo_strtrim(values.setName or "")
+    local setName = zo_strtrim(values.setName ~= nil and values.setName or existingRule.setName or "")
     if setName == "" then
-        rule.setId = nil
-        rule.setName = nil
-        rule.normalizedSetName = nil
+        ruleSource.setId = nil
+        ruleSource.setName = nil
     else
         local linkDetails = readLinkDetails(item.itemLink)
-        rule.setName = setName
-        rule.normalizedSetName = normalizeName(setName)
-        if linkDetails.normalizedSetName == rule.normalizedSetName then
-            rule.setId = linkDetails.setId
+        ruleSource.setName = setName
+        if linkDetails.normalizedSetName == normalizeName(setName) then
+            ruleSource.setId = linkDetails.setId
         else
-            rule.setId = nil
+            ruleSource.setId = nil
         end
     end
 
-    rule.traitType = values.traitType
-    rule.qualityMode = values.qualityMode or "any"
-    rule.quality = tonumber(values.quality)
-    rule.levelMode = values.levelMode or "any"
-    rule.level = math.max(1, math.floor(tonumber(values.level) or 1))
-    rule.championPoints = math.max(0, math.floor(tonumber(values.championPoints) or 0))
+    local rule = ShoppingListModel:NormalizeMatchingRule(ruleSource)
+    if not rule then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_MATCH)
+    end
+
+    item.desired = desired
+    item.note = note
+    item.maxUnitPrice = maxUnitPrice
+    item.match = rule
 
     item.completed = item.purchased >= item.desired
     return true
@@ -1083,6 +1983,9 @@ function Data:UndoLastDeletion()
         if not list then
             return false, GetString(SI_SHOPPING_LIST_ERROR_UNDO_LIST_MISSING)
         end
+        if #list.items + #action.items > ShoppingListModel.MAX_ITEMS_PER_LIST then
+            return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_FULL)
+        end
         table.sort(action.items, function(left, right)
             return (tonumber(left.index) or 1) < (tonumber(right.index) or 1)
         end)
@@ -1121,7 +2024,8 @@ function Data:RecordPurchase(entry, quantity, purchase)
         unitPrice = listingPrice / listingQuantity
     end
     unitPrice = math.max(0, unitPrice or 0)
-    local appliedPrice = math.floor((unitPrice * quantity) + 0.5)
+    local appliedPrice = tonumber(purchase.allocatedPrice)
+        or math.floor((unitPrice * quantity) + 0.5)
 
     entry.purchaseHistory = entry.purchaseHistory or {}
     entry.purchaseHistory[#entry.purchaseHistory + 1] = {
@@ -1136,11 +2040,118 @@ function Data:RecordPurchase(entry, quantity, purchase)
         currencyType = purchase.currencyType or CURT_MONEY,
         itemLink = purchase.itemLink,
         itemName = purchase.itemName,
+        transactionId = purchase.transactionId,
+        transactionPrice = purchase.transactionPrice,
     }
+    while #entry.purchaseHistory > MAX_HISTORY_PER_ITEM do
+        table.remove(entry.purchaseHistory, 1)
+    end
+    entry.purchaseCount = math.max(
+        #entry.purchaseHistory,
+        math.floor(tonumber(entry.purchaseCount) or 0) + 1
+    )
     entry.totalSpent = math.max(0, tonumber(entry.totalSpent) or 0) + appliedPrice
     entry.pricedQuantity = math.max(0, tonumber(entry.pricedQuantity) or 0) + quantity
     list.totalSpent = math.max(0, tonumber(list.totalSpent) or 0) + appliedPrice
     return list
+end
+
+function Data:RecordPurchaseTransaction(changes, purchase)
+    purchase = purchase or {}
+    if type(changes) ~= "table" or #changes == 0 then
+        return nil
+    end
+
+    local appliedQuantity = 0
+    for _, change in ipairs(changes) do
+        appliedQuantity = appliedQuantity + math.max(0, tonumber(change.quantity) or 0)
+    end
+    if appliedQuantity <= 0 then
+        return nil
+    end
+
+    local listingQuantity = math.max(
+        1,
+        math.floor(tonumber(purchase.quantity) or appliedQuantity)
+    )
+    local listingPrice = math.max(
+        0,
+        math.floor(tonumber(purchase.totalPrice) or 0)
+    )
+    local unitPrice = tonumber(purchase.unitPrice)
+    if not unitPrice and listingPrice > 0 then
+        unitPrice = listingPrice / listingQuantity
+    end
+    unitPrice = math.max(0, unitPrice or 0)
+    if purchase.totalPrice == nil and unitPrice > 0 then
+        listingPrice = math.floor((unitPrice * listingQuantity) + 0.5)
+    end
+
+    local transactionId = self.saved.nextTransactionId
+    self.saved.nextTransactionId = transactionId + 1
+    local transaction = {
+        id = transactionId,
+        timestamp = math.max(0, math.floor(tonumber(purchase.timestamp) or GetTimeStamp())),
+        quantity = listingQuantity,
+        totalPrice = listingPrice,
+        unitPrice = unitPrice,
+        sellerName = purchase.sellerName,
+        guildName = purchase.guildName,
+        currencyType = purchase.currencyType or CURT_MONEY,
+        itemLink = purchase.itemLink,
+        itemName = purchase.itemName,
+        allocations = {},
+    }
+
+    local distributedPrice = 0
+    for index, change in ipairs(changes) do
+        local list = self:GetListForItem(change.entry.id)
+        if list then
+            local transactionPrice
+            if index == #changes then
+                transactionPrice = listingPrice - distributedPrice
+            else
+                transactionPrice = math.floor(
+                    (listingPrice * change.quantity) / appliedQuantity
+                )
+                distributedPrice = distributedPrice + transactionPrice
+            end
+            local allocatedPrice = math.floor((unitPrice * change.quantity) + 0.5)
+            self:RecordPurchase(change.entry, change.quantity, {
+                quantity = listingQuantity,
+                totalPrice = listingPrice,
+                unitPrice = unitPrice,
+                timestamp = transaction.timestamp,
+                sellerName = purchase.sellerName,
+                guildName = purchase.guildName,
+                currencyType = transaction.currencyType,
+                itemLink = purchase.itemLink,
+                itemName = purchase.itemName,
+                allocatedPrice = allocatedPrice,
+                transactionId = transactionId,
+                transactionPrice = transactionPrice,
+            })
+            list.transactionSpent = math.max(
+                0,
+                tonumber(list.transactionSpent) or tonumber(list.totalSpent) or 0
+            ) + transactionPrice
+            transaction.allocations[#transaction.allocations + 1] = {
+                listId = list.id,
+                itemId = change.entry.id,
+                quantity = change.quantity,
+                allocatedPrice = allocatedPrice,
+                transactionPrice = transactionPrice,
+            }
+        end
+    end
+
+    self.saved.purchaseTransactions[#self.saved.purchaseTransactions + 1] = transaction
+    while #self.saved.purchaseTransactions
+        > ShoppingListModel.MAX_PURCHASE_TRANSACTIONS
+    do
+        table.remove(self.saved.purchaseTransactions, 1)
+    end
+    return transaction
 end
 
 function Data.NormalizeName(name)

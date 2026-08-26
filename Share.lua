@@ -5,13 +5,13 @@ local PREFIX_V1 = "SL1:"
 local PREFIX_V2 = "SL2:"
 local FORMAT_VERSION_V1 = 1
 local FORMAT_VERSION_V2 = 2
-local MAX_ITEMS = 500
-local MAX_NAME_BYTES = 512
-local MAX_NOTE_BYTES = 2000
-local MAX_LINK_BYTES = 2048
+local MAX_ITEMS = ShoppingListModel.MAX_ITEMS_PER_LIST
+local MAX_NAME_BYTES = ShoppingListModel.MAX_NAME_LENGTH
+local MAX_NOTE_BYTES = ShoppingListModel.MAX_NOTE_LENGTH
+local MAX_LINK_BYTES = ShoppingListModel.MAX_LINK_LENGTH
 local MAX_CODE_LENGTH = 20000
 local MAX_U16 = 65535
-local MAX_U32 = 4294967295
+local MAX_U32 = ShoppingListModel.MAX_PRICE
 local ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 local DECODE = {}
 
@@ -227,7 +227,7 @@ local function decodeV1(payload)
         local quantity = reader:U32()
         local itemName = reader:Bytes(itemNameLength, MAX_NAME_BYTES, false)
         if not itemName or trim(itemName) == ""
-            or not quantity or quantity < 1 or quantity > 1000000
+            or not quantity or quantity < 1 or quantity > ShoppingListModel.MAX_QUANTITY
         then
             return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_ITEM_DATA)
         end
@@ -291,8 +291,11 @@ function Share.EncodeList(list)
         local itemName = trim(item.name)
         local itemLink = tostring(item.itemLink or "")
         local itemNote = tostring(item.note or "")
-        local quantity = wholeNumber(item.desired, 1, 1000000)
+        local quantity = wholeNumber(item.desired, 1, ShoppingListModel.MAX_QUANTITY)
         local match = item.match or {}
+        if not ShoppingListModel:IsValidMatchingRule(match) then
+            return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_ITEM_DATA)
+        end
         local setName = trim(match.setName)
         local setId = match.setId == nil and 0
             or wholeNumber(match.setId, 1, MAX_U32)
@@ -399,7 +402,7 @@ local function decodeV2(payload)
         local maxUnitPrice = reader:U32()
 
         if not itemName or trim(itemName) == ""
-            or not quantity or quantity < 1 or quantity > 1000000
+            or not quantity or quantity < 1 or quantity > ShoppingListModel.MAX_QUANTITY
             or itemLink == nil or itemNote == nil or setName == nil
             or setId == nil or not qualityMode or not levelMode
             or maxUnitPrice == nil
@@ -431,6 +434,10 @@ local function decodeV2(payload)
             match.setName = setName
             match.normalizedSetName = ShoppingListData.NormalizeName(setName)
             match.setId = setId ~= 0 and setId or nil
+        end
+        match = ShoppingListModel:NormalizeMatchingRule(match)
+        if not match then
+            return nil, GetString(SI_SHOPPING_LIST_SHARE_ERROR_ITEM_DATA)
         end
 
         items[#items + 1] = {
@@ -497,7 +504,7 @@ function Share:Initialize()
     window:SetDrawTier(DT_HIGH)
     self.window = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(window)
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
@@ -584,7 +591,7 @@ function Share:CreateImportDialog()
     dialog:SetDrawLevel(10)
     self.importWindow = dialog
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(dialog)
     backdrop:SetAnchorFill(dialog)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.99)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)

@@ -1,7 +1,7 @@
 ShoppingListListTools = {}
 
 local ListTools = ShoppingListListTools
-local MAX_BULK_ITEMS = 500
+local MAX_BULK_ITEMS = ShoppingListModel.MAX_ITEMS_PER_LIST
 local MAX_BULK_TEXT = 20000
 local TRIP_ROW_COUNT = 10
 local TRIP_ROW_HEIGHT = 31
@@ -55,7 +55,9 @@ function ListTools.ParseBulkText(text)
 
             name = trim(name)
             quantity = math.floor(tonumber(quantity) or 0)
-            if name == "" or #name > 100 or quantity < 1 or quantity > 1000000 then
+            if name == "" or #name > ShoppingListModel.MAX_NAME_LENGTH
+                or quantity < 1 or quantity > ShoppingListModel.MAX_QUANTITY
+            then
                 return nil, zo_strformat(
                     GetString(SI_SHOPPING_LIST_BULK_ERROR_LINE),
                     lineNumber
@@ -101,7 +103,7 @@ function ListTools:CreateBulkWindow()
     window:SetDrawTier(DT_HIGH)
     self.bulkWindow = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(window)
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
@@ -171,7 +173,7 @@ function ListTools:CreateTripWindow()
     window:SetHandler("OnMouseWheel", function(_, delta) self:ScrollTripLists(-delta) end)
     self.tripWindow = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(window)
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)

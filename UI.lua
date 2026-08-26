@@ -44,7 +44,7 @@ local function makeEdit(parent, width)
     edit:SetAnchor(TOPLEFT, backdrop, TOPLEFT, 3, 2)
     edit:SetAnchor(BOTTOMRIGHT, backdrop, BOTTOMRIGHT, -3, -2)
     ShoppingListAccessibility:SetFont(edit, "ZoFontGame")
-    edit:SetMaxInputChars(100)
+    edit:SetMaxInputChars(ShoppingListModel.MAX_NAME_LENGTH)
     edit:SetNewLineEnabled(false)
     edit:SetSelectAllOnFocus(true)
     return backdrop, edit
@@ -135,7 +135,7 @@ function UI:Initialize()
     end)
     self.window = window
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, window, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(window)
     backdrop:SetAnchorFill(window)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.96)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.9)
@@ -234,7 +234,7 @@ function UI:Initialize()
     local quantityBackdrop, quantityEdit = makeEdit(window, 48)
     quantityBackdrop:SetAnchor(LEFT, nameBackdrop, RIGHT, 6, 0)
     quantityEdit:SetText("1")
-    quantityEdit:SetMaxInputChars(4)
+    quantityEdit:SetMaxInputChars(#tostring(ShoppingListModel.MAX_QUANTITY))
     quantityEdit:SetTextType(TEXT_TYPE_NUMERIC)
     quantityEdit:SetHandler("OnEnter", function() self:AddFromInput() end)
     self.quantityEdit = quantityEdit
@@ -406,7 +406,7 @@ function UI:CreateListDialog()
     dialog:SetDrawTier(DT_HIGH)
     self.listDialog = dialog
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(dialog)
     backdrop:SetAnchorFill(dialog)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
@@ -423,7 +423,7 @@ function UI:CreateListDialog()
 
     local nameBackdrop, nameEdit = makeEdit(dialog, 384)
     nameBackdrop:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 52)
-    nameEdit:SetMaxInputChars(60)
+    nameEdit:SetMaxInputChars(ShoppingListModel.MAX_NAME_LENGTH)
     nameEdit:SetHandler("OnEnter", function() self:CompleteListDialog() end)
     nameEdit:SetHandler("OnEscape", function() self:CloseListDialog() end)
     self.listDialogNameBackdrop = nameBackdrop
@@ -617,7 +617,7 @@ end
 
 function UI:CreateBudgetDialog()
     local dialog = WINDOW_MANAGER:CreateTopLevelWindow("ShoppingListBudgetWindow")
-    dialog:SetDimensions(390, 210)
+    dialog:SetDimensions(390, 225)
     dialog:SetAnchor(CENTER, GuiRoot, CENTER, 0, 0)
     dialog:SetClampedToScreen(true)
     dialog:SetMouseEnabled(true)
@@ -625,7 +625,7 @@ function UI:CreateBudgetDialog()
     dialog:SetDrawTier(DT_HIGH)
     self.budgetDialog = dialog
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, dialog, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(dialog)
     backdrop:SetAnchorFill(dialog)
     backdrop:SetCenterColor(0.035, 0.035, 0.045, 0.98)
     backdrop:SetEdgeColor(0.5, 0.42, 0.28, 0.95)
@@ -643,12 +643,13 @@ function UI:CreateBudgetDialog()
 
     self.budgetSpent = makeLabel(dialog, "ZoFontGameSmall")
     self.budgetSpent:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 71)
-    self.budgetSpent:SetDimensions(354, 24)
+    self.budgetSpent:SetDimensions(354, 40)
+    self.budgetSpent:SetVerticalAlignment(TEXT_ALIGN_TOP)
 
     local budgetBackdrop, budgetEdit = makeEdit(dialog, 220)
-    budgetBackdrop:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 101)
+    budgetBackdrop:SetAnchor(TOPLEFT, dialog, TOPLEFT, 18, 116)
     budgetEdit:SetTextType(TEXT_TYPE_NUMERIC)
-    budgetEdit:SetMaxInputChars(12)
+    budgetEdit:SetMaxInputChars(#tostring(ShoppingListModel.MAX_PRICE))
     budgetEdit:SetDefaultText(GetString(SI_SHOPPING_LIST_NO_BUDGET))
     budgetEdit:SetHandler("OnEnter", function() self:SaveBudget() end)
     budgetEdit:SetHandler("OnEscape", function() self:CloseBudgetDialog() end)
@@ -678,6 +679,7 @@ function UI:OpenBudgetDialog()
     self.budgetListName:SetText(list.name)
     self.budgetSpent:SetText(zo_strformat(
         GetString(SI_SHOPPING_LIST_RECORDED_SPENDING),
+        formatCompactGold(list.transactionSpent or list.totalSpent),
         formatCompactGold(list.totalSpent)
     ))
     self.budgetEdit:SetText(list.budget and tostring(list.budget) or "")
@@ -946,7 +948,7 @@ function UI:CreateSuggestions(relativeTo)
     panel:SetHandler("OnMouseWheel", function(_, delta) self:ScrollSuggestions(-delta) end)
     self.suggestionPanel = panel
 
-    local backdrop = WINDOW_MANAGER:CreateControlFromVirtual(nil, panel, "ZO_DefaultBackdrop")
+    local backdrop = ShoppingListControls:CreateBackdrop(panel)
     backdrop:SetAnchorFill(panel)
 
     self.suggestions = {}
@@ -1150,7 +1152,8 @@ function UI:RefreshSummary(completed, total)
             end
         end
         for _, activeList in ipairs(lists) do
-            spent = spent + (tonumber(activeList.totalSpent) or 0)
+            spent = spent + (tonumber(activeList.transactionSpent)
+                or tonumber(activeList.totalSpent) or 0)
         end
         self.summary:SetText(zo_strformat(
             GetString(SI_SHOPPING_LIST_SUMMARY_SPENT),
@@ -1172,14 +1175,16 @@ function UI:RefreshSummary(completed, total)
     end
 
     if list.budget then
+        local spent = tonumber(list.transactionSpent)
+            or tonumber(list.totalSpent) or 0
         local summary = zo_strformat(
             GetString(SI_SHOPPING_LIST_SUMMARY_WITH_BUDGET),
             completed,
             total,
-            formatCompactGold(list.totalSpent),
+            formatCompactGold(spent),
             formatCompactGold(list.budget)
         )
-        if list.totalSpent > list.budget then
+        if spent > list.budget then
             if self.owner.accessibility
                 and self.owner.accessibility:UsesNonColorIndicators()
             then
@@ -1195,7 +1200,7 @@ function UI:RefreshSummary(completed, total)
             GetString(SI_SHOPPING_LIST_SUMMARY_SPENT),
             completed,
             total,
-            formatCompactGold(list.totalSpent)
+            formatCompactGold(list.transactionSpent or list.totalSpent)
         ))
         self.summary:SetColor(0.9, 0.9, 0.9, 1)
     end

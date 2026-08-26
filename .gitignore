@@ -6,3 +6,5 @@
 TODO.txt
 .npm-cache/
 .lua-lint/
+node_modules/
+dist/

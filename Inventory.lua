@@ -71,7 +71,19 @@ function Inventory:QueueRefresh(delayMs)
     end, delayMs or 100)
 end
 
-local function readSlot(byName, bag, slotIndex)
+local function addCandidate(index, key, candidate)
+    if key == nil or key == "" then
+        return
+    end
+    local entries = index[key]
+    if not entries then
+        entries = {}
+        index[key] = entries
+    end
+    entries[#entries + 1] = candidate
+end
+
+local function readSlot(byName, byItemId, bag, slotIndex)
     local stack = GetSlotStackSize(bag.id, slotIndex) or 0
     if stack == 0 then
         return
@@ -83,40 +95,39 @@ local function readSlot(byName, bag, slotIndex)
         return
     end
 
-    local entries = byName[normalizedName]
-    if not entries then
-        entries = {}
-        byName[normalizedName] = entries
-    end
-    entries[#entries + 1] = {
+    local link = GetItemLink(bag.id, slotIndex, LINK_STYLE_DEFAULT)
+    local candidate = {
         kind = bag.kind,
-        link = GetItemLink(bag.id, slotIndex, LINK_STYLE_DEFAULT),
+        link = link,
         name = itemName,
         stack = stack,
     }
+    addCandidate(byName, normalizedName, candidate)
+    addCandidate(byItemId, GetItemLinkItemId(link), candidate)
 end
 
 function Inventory:ReadItems()
     local byName = {}
+    local byItemId = {}
     for _, bag in ipairs(self.bags) do
         if bag.id == BAG_VIRTUAL then
             local slotIndex = GetNextVirtualBagSlotId()
             while slotIndex do
-                readSlot(byName, bag, slotIndex)
+                readSlot(byName, byItemId, bag, slotIndex)
                 slotIndex = GetNextVirtualBagSlotId(slotIndex)
             end
         else
             local size = GetBagSize(bag.id) or 0
             for slotIndex = 0, size - 1 do
-                readSlot(byName, bag, slotIndex)
+                readSlot(byName, byItemId, bag, slotIndex)
             end
         end
     end
-    return byName
+    return byName, byItemId
 end
 
 function Inventory:Refresh()
-    local inventoryItems = self:ReadItems()
+    local inventoryByName, inventoryByItemId = self:ReadItems()
     local counts = {}
 
     for _, list in ipairs(self.owner.data:GetLists()) do
@@ -127,7 +138,8 @@ function Inventory:Refresh()
                 craftBag = 0,
                 total = 0,
             }
-            local candidates = inventoryItems[item.normalizedName] or {}
+            local candidates = item.itemId and inventoryByItemId[item.itemId]
+                or inventoryByName[item.normalizedName] or {}
             for _, candidate in ipairs(candidates) do
                 if self.owner.matcher:MatchesItem(item, candidate.link, candidate.name) then
                     owned[candidate.kind] = owned[candidate.kind] + candidate.stack
