@@ -4,7 +4,7 @@ local Data = ShoppingListData
 local DEFAULT_LIST_NAME = GetString(SI_SHOPPING_LIST_DEFAULT_LIST_NAME)
 local MAX_DELETED_ACTIONS = 20
 local MAX_NOTE_LENGTH = ShoppingListModel.MAX_NOTE_LENGTH
-local CURRENT_SCHEMA_VERSION = 5
+local CURRENT_SCHEMA_VERSION = 6
 local MAX_RECOVERY_SNAPSHOTS = 5
 local MAX_EXTERNAL_SNAPSHOTS = 10
 local MAX_BACKUP_LISTS = ShoppingListModel.MAX_LISTS
@@ -53,6 +53,7 @@ local defaults = {
             resetCount = 0,
             favorite = false,
             pinned = false,
+            locked = false,
             category = "",
             itemSearch = "",
             itemSort = DEFAULT_ITEM_SORT,
@@ -71,6 +72,7 @@ local defaults = {
         fontScale = 1,
         highContrast = false,
         nonColorIndicators = false,
+        autoFindNext = false,
         window = {
             width = 350,
             height = 500,
@@ -334,6 +336,7 @@ function Data:Normalize()
     settings.fontScale = zo_clamp(tonumber(settings.fontScale) or 1, 0.9, 1.4)
     settings.highContrast = settings.highContrast == true
     settings.nonColorIndicators = settings.nonColorIndicators == true
+    settings.autoFindNext = settings.autoFindNext == true
     local window = settings.window or {}
     settings.window = window
     window.width = zo_clamp(tonumber(window.width) or 350, 350, 900)
@@ -358,6 +361,7 @@ function Data:Normalize()
             list.recurring = list.recurring == true
             list.favorite = list.favorite == true
             list.pinned = list.pinned == true
+            list.locked = list.locked == true
             list.category = normalizeCategory(list.category)
             list.itemSearch = zo_strtrim(tostring(list.itemSearch or ""))
             if #list.itemSearch > ShoppingListModel.MAX_NAME_LENGTH then
@@ -374,6 +378,13 @@ function Data:Normalize()
             list.lastResetAt = math.max(0, math.floor(tonumber(list.lastResetAt) or 0))
             if list.lastResetAt == 0 then
                 list.lastResetAt = nil
+            end
+            list.lastResetTransactionId = math.max(
+                0,
+                math.floor(tonumber(list.lastResetTransactionId) or 0)
+            )
+            if list.lastResetTransactionId == 0 then
+                list.lastResetTransactionId = nil
             end
             if archived then
                 list.archivedAt = tonumber(list.archivedAt) or GetTimeStamp()
@@ -480,6 +491,10 @@ local migrations = {
         candidate:Normalize()
         candidate.saved.schemaVersion = 5
     end,
+    [5] = function(candidate)
+        candidate:Normalize()
+        candidate.saved.schemaVersion = 6
+    end,
 }
 
 local function isFiniteNumber(value, minimum, maximum)
@@ -556,6 +571,7 @@ local function validateHistory(history)
             or not optionalString(purchase.itemLink, MAX_LINK_LENGTH)
             or not optionalWholeNumber(purchase.transactionId, 1, MAX_U32)
             or not optionalWholeNumber(purchase.transactionPrice, 0, MAX_SAFE_INTEGER)
+            or not optionalBoolean(purchase.manual)
         then
             return false
         end
@@ -614,12 +630,14 @@ local function validateList(list, archived, listIds, itemIds, totals)
         or not optionalBoolean(list.recurring)
         or not optionalBoolean(list.favorite)
         or not optionalBoolean(list.pinned)
+        or not optionalBoolean(list.locked)
         or not optionalString(list.category, ShoppingListModel.MAX_CATEGORY_LENGTH)
         or not optionalString(list.itemSearch, MAX_NAME_LENGTH)
         or (list.itemSort ~= nil and not ShoppingListModel.ITEM_SORTS[list.itemSort])
         or not optionalBoolean(list.itemSortAscending)
         or not optionalWholeNumber(list.resetCount, 0, MAX_SAFE_INTEGER)
         or not optionalWholeNumber(list.lastResetAt, 0, MAX_SAFE_INTEGER)
+        or not optionalWholeNumber(list.lastResetTransactionId, 1, MAX_U32)
     then
         return false
     end
@@ -665,6 +683,7 @@ local function validateTransactions(transactions)
             or not optionalString(transaction.guildName, MAX_NAME_LENGTH)
             or not optionalString(transaction.itemName, MAX_NAME_LENGTH)
             or not optionalString(transaction.itemLink, MAX_LINK_LENGTH)
+            or not optionalBoolean(transaction.manual)
             or not isSequentialArray(
                 transaction.allocations,
                 MAX_BACKUP_ITEMS
@@ -830,6 +849,7 @@ function Data:ValidateBackupSnapshot(snapshot)
         or not optionalFiniteNumber(settings.fontScale, 0.9, 1.4)
         or not optionalBoolean(settings.highContrast)
         or not optionalBoolean(settings.nonColorIndicators)
+        or not optionalBoolean(settings.autoFindNext)
         or (settings.window ~= nil and type(settings.window) ~= "table")
     then
         return false
@@ -1402,6 +1422,42 @@ function Data:GetCurrentList()
     return list
 end
 
+function Data:IsListLocked(listOrId)
+    local list = listOrId == nil and self:GetCurrentList()
+        or (type(listOrId) == "table" and listOrId
+            or self:FindList(listOrId))
+    return list ~= nil and list.locked == true
+end
+
+function Data:RequireUnlockedList(listOrId)
+    local list = type(listOrId) == "table" and listOrId
+        or self:FindList(listOrId)
+    if not list then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if list.locked then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
+    return list
+end
+
+function Data:SetListLocked(id, locked)
+    local list = self:FindList(id)
+    if not list then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if type(locked) ~= "boolean" then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LIST_ORGANIZATION)
+    end
+    list.locked = locked
+    self:NotifyUpdate("list", {
+        action = "updated",
+        listId = list.id,
+        field = "locked",
+    })
+    return true, list
+end
+
 function Data:EnsureActiveTripList()
     for _, list in ipairs(self.saved.lists) do
         if list.tripActive then
@@ -1534,10 +1590,11 @@ function Data:SelectList(id)
 end
 
 function Data:MoveList(id, direction)
-    local _, index = self:FindList(id)
-    if not index then
-        return false
+    local list, message = self:RequireUnlockedList(id)
+    if not list then
+        return false, message
     end
+    local _, index = self:FindList(id)
 
     local target = zo_clamp(index + direction, 1, #self.saved.lists)
     if target == index then
@@ -1631,6 +1688,7 @@ function Data:AddList(name, note, category, suppressUpdate)
         resetCount = 0,
         favorite = false,
         pinned = false,
+        locked = false,
         category = normalizeCategory(category),
         itemSearch = "",
         itemSort = DEFAULT_ITEM_SORT,
@@ -1799,6 +1857,7 @@ function Data:DuplicateList(id, name, note, category, selectList)
         resetCount = 0,
         favorite = false,
         pinned = false,
+        locked = false,
         category = normalizeCategory(copiedCategory),
         itemSearch = "",
         itemSort = source.itemSort or DEFAULT_ITEM_SORT,
@@ -1852,6 +1911,9 @@ function Data:RenameList(id, name)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
 
     name = zo_strtrim(name or "")
     if name == "" then
@@ -1877,6 +1939,9 @@ function Data:UpdateListNote(id, note)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
     if type(note) ~= "string" or #note > ShoppingListModel.MAX_NOTE_LENGTH then
         return false, GetString(SI_SHOPPING_LIST_ERROR_NOTE_TOO_LONG)
     end
@@ -1893,6 +1958,9 @@ function Data:UpdateListCategory(id, category)
     local list = self:FindList(id)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
     end
     if type(category) ~= "string"
         or #category > ShoppingListModel.MAX_CATEGORY_LENGTH
@@ -1913,6 +1981,9 @@ function Data:SetListFavorite(id, favorite)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
     if type(favorite) ~= "boolean" then
         return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LIST_ORGANIZATION)
     end
@@ -1930,6 +2001,9 @@ function Data:SetListPinned(id, pinned)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
     if type(pinned) ~= "boolean" then
         return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_LIST_ORGANIZATION)
     end
@@ -1946,6 +2020,9 @@ function Data:UpdateListBudget(id, value)
     local list = self:FindList(id)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
     end
 
     local budget = tonumber(value)
@@ -1970,6 +2047,9 @@ function Data:SetListRecurring(id, recurring)
     local list = self:FindList(id)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
     end
     if type(recurring) ~= "boolean" then
         return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_RECURRING)
@@ -2003,6 +2083,9 @@ function Data:ResetListProgress(id)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
     if not self:ListHasPurchaseProgress(list) then
         return false, GetString(SI_SHOPPING_LIST_STATUS_NO_PROGRESS_TO_RESET)
     end
@@ -2030,6 +2113,13 @@ function Data:ResetListProgress(id)
     end
     list.resetCount = math.max(0, tonumber(list.resetCount) or 0) + 1
     list.lastResetAt = GetTimeStamp()
+    list.lastResetTransactionId = math.max(
+        0,
+        (tonumber(self.saved.nextTransactionId) or 1) - 1
+    )
+    if list.lastResetTransactionId == 0 then
+        list.lastResetTransactionId = nil
+    end
     self:NotifyUpdate("list", {
         action = "progressReset",
         listId = list.id,
@@ -2060,6 +2150,9 @@ function Data:DeleteList(id)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
     self:PushDeletedAction({
         kind = "list",
         list = list,
@@ -2083,6 +2176,9 @@ function Data:ArchiveList(id)
     if not list then
         return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
 
     table.remove(self.saved.lists, index)
     list.archivedAt = GetTimeStamp()
@@ -2097,6 +2193,7 @@ function Data:ArchiveList(id)
             totalSpent = 0,
             transactionSpent = 0,
             budget = nil,
+            locked = false,
         }
         self.saved.nextListId = self.saved.nextListId + 1
         self.saved.lists[1] = replacement
@@ -2339,6 +2436,28 @@ function Data:GetFilteredShoppingItems()
     return result
 end
 
+function Data:GetNextNeededItem(afterItemId)
+    local items = self:GetFilteredShoppingItems()
+    if #items == 0 then
+        return nil
+    end
+    local start = 0
+    if afterItemId ~= nil then
+        for index, item in ipairs(items) do
+            if item.id == afterItemId then
+                start = index
+                break
+            end
+        end
+    end
+    for step = 1, #items do
+        local index = ((start + step - 1) % #items) + 1
+        if self:GetRemainingQuantity(items[index]) > 0 then
+            return items[index], index
+        end
+    end
+end
+
 function Data:BuildItemCandidate(source)
     if type(source) ~= "table" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
@@ -2513,6 +2632,9 @@ function Data:AddPreparedItemToList(listId, source, duplicatePolicy, suppressUpd
     if not list then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
     end
+    if list.locked then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
 
     duplicatePolicy = duplicatePolicy or "keep"
     if not ShoppingListModel:IsValidDuplicatePolicy(duplicatePolicy) then
@@ -2626,6 +2748,9 @@ function Data:AddItemsToList(listId, sources, duplicatePolicy, suppressUpdate)
     local list = self:FindList(listId)
     if not list then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_MISSING)
+    end
+    if list.locked then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
     end
     if type(sources) ~= "table" then
         return nil, GetString(SI_SHOPPING_LIST_ERROR_SHARED_LIST_INVALID_ITEM)
@@ -2751,9 +2876,12 @@ function Data:AddItem(name, quantity, itemLink, nameHash)
 end
 
 function Data:UpdateItem(id, values)
-    local item = self:FindItem(id)
+    local item, _, list = self:FindItem(id)
     if not item then
         return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
     end
 
     values = values or {}
@@ -2826,7 +2954,6 @@ function Data:UpdateItem(id, values)
     else
         item.completed = item.purchased >= item.desired
     end
-    local list = self:GetListForItem(item.id)
     self:NotifyUpdate("item", {
         action = "updated",
         listId = list and list.id,
@@ -2861,7 +2988,10 @@ end
 function Data:RemoveItem(id)
     local item, index, list = self:FindItem(id)
     if not item then
-        return false
+        return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
     end
     self:PushDeletedAction({
         kind = "items",
@@ -2881,7 +3011,10 @@ end
 function Data:MoveItem(id, direction)
     local item, index, list = self:FindItem(id)
     if not item then
-        return false
+        return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
     end
 
     local items = list.items
@@ -2901,9 +3034,12 @@ function Data:MoveItem(id, direction)
 end
 
 function Data:ToggleItem(id)
-    local item = self:FindItem(id)
+    local item, _, list = self:FindItem(id)
     if not item then
-        return false
+        return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
     end
     if self:GetTargetMode(item) == "own" then
         return false
@@ -2916,7 +3052,6 @@ function Data:ToggleItem(id)
     else
         item.completed = true
     end
-    local list = self:GetListForItem(item.id)
     self:NotifyUpdate("item", {
         action = "completionChanged",
         listId = list and list.id,
@@ -2926,6 +3061,10 @@ function Data:ToggleItem(id)
 end
 
 function Data:ClearCompleted()
+    local list = self:GetCurrentList()
+    if list.locked then
+        return nil, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
     local items = self:GetItems()
     local removed = {}
     for index = #items, 1, -1 do
@@ -2981,6 +3120,9 @@ function Data:UndoLastDeletion()
         local list = self:FindList(action.listId)
         if not list then
             return false, GetString(SI_SHOPPING_LIST_ERROR_UNDO_LIST_MISSING)
+        end
+        if list.locked then
+            return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
         end
         if #list.items + #action.items > ShoppingListModel.MAX_ITEMS_PER_LIST then
             return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_FULL)
@@ -3054,6 +3196,7 @@ function Data:RecordPurchase(entry, quantity, purchase)
         itemName = purchase.itemName,
         transactionId = purchase.transactionId,
         transactionPrice = purchase.transactionPrice,
+        manual = purchase.manual == true,
     }
     while #entry.purchaseHistory > MAX_HISTORY_PER_ITEM do
         table.remove(entry.purchaseHistory, 1)
@@ -3112,6 +3255,7 @@ function Data:RecordPurchaseTransaction(changes, purchase)
         currencyType = purchase.currencyType or CURT_MONEY,
         itemLink = purchase.itemLink,
         itemName = purchase.itemName,
+        manual = purchase.manual == true,
         allocations = {},
     }
 
@@ -3142,6 +3286,7 @@ function Data:RecordPurchaseTransaction(changes, purchase)
                 allocatedPrice = allocatedPrice,
                 transactionId = transactionId,
                 transactionPrice = transactionPrice,
+                manual = transaction.manual,
             })
             list.transactionSpent = math.max(
                 0,
@@ -3184,6 +3329,496 @@ function Data:RecordPurchaseTransaction(changes, purchase)
         itemName = transaction.itemName,
     })
     return transaction
+end
+
+function Data:FindPurchaseTransaction(id)
+    id = tonumber(id)
+    for index, transaction in ipairs(self.saved.purchaseTransactions or {}) do
+        if transaction.id == id then
+            return transaction, index
+        end
+    end
+end
+
+local function findHistoryByTransaction(item, transactionId)
+    for index = #(item.purchaseHistory or {}), 1, -1 do
+        if item.purchaseHistory[index].transactionId == transactionId then
+            return item.purchaseHistory[index], index
+        end
+    end
+end
+
+local function setItemCompletion(data, item)
+    if data:GetTargetMode(item) == "own" then
+        item.completed = data:GetOwnedQuantity(item) >= item.desired
+    else
+        item.completed = (tonumber(item.purchased) or 0) >= item.desired
+    end
+end
+
+local function purchaseContributesToProgress(list, purchase)
+    local cutoff = tonumber(list and list.lastResetTransactionId)
+    local transactionId = tonumber(purchase and purchase.transactionId)
+    if cutoff and transactionId then
+        return transactionId > cutoff
+    end
+    local resetAt = tonumber(list and list.lastResetAt)
+    if not resetAt then
+        return true
+    end
+    return (tonumber(purchase and purchase.timestamp) or 0) > resetAt
+end
+
+local function addSpendingDelta(item, list, allocatedDelta, quantityDelta)
+    item.totalSpent = math.max(
+        0,
+        (tonumber(item.totalSpent) or 0) + allocatedDelta
+    )
+    item.pricedQuantity = math.max(
+        0,
+        (tonumber(item.pricedQuantity) or 0) + (quantityDelta or 0)
+    )
+    list.totalSpent = math.max(
+        0,
+        (tonumber(list.totalSpent) or 0) + allocatedDelta
+    )
+end
+
+function Data:RedistributeTransactionPrice(transaction)
+    local oldByList = {}
+    for _, allocation in ipairs(transaction.allocations or {}) do
+        oldByList[allocation.listId] = (oldByList[allocation.listId] or 0)
+            + math.max(0, tonumber(allocation.transactionPrice) or 0)
+    end
+
+    local totalQuantity = 0
+    for _, allocation in ipairs(transaction.allocations or {}) do
+        totalQuantity = totalQuantity + math.max(
+            0,
+            tonumber(allocation.quantity) or 0
+        )
+    end
+    local distributed = 0
+    local newByList = {}
+    for index, allocation in ipairs(transaction.allocations or {}) do
+        local price
+        if index == #transaction.allocations then
+            price = math.max(0, transaction.totalPrice - distributed)
+        else
+            price = totalQuantity > 0 and math.floor(
+                (transaction.totalPrice * allocation.quantity) / totalQuantity
+            ) or 0
+            distributed = distributed + price
+        end
+        allocation.transactionPrice = price
+        newByList[allocation.listId] = (newByList[allocation.listId] or 0)
+            + price
+        local item = self:FindItem(allocation.itemId)
+        local history = item and findHistoryByTransaction(item, transaction.id)
+        if history then
+            history.transactionPrice = price
+        end
+    end
+
+    local touched = {}
+    for listId in pairs(oldByList) do touched[listId] = true end
+    for listId in pairs(newByList) do touched[listId] = true end
+    for listId in pairs(touched) do
+        local list = self:FindList(listId)
+        if list then
+            list.transactionSpent = math.max(
+                0,
+                (tonumber(list.transactionSpent) or 0)
+                    + (newByList[listId] or 0)
+                    - (oldByList[listId] or 0)
+            )
+        end
+    end
+end
+
+function Data:AddManualAcquisition(itemId, quantity, unitPrice)
+    local item, _, list = self:FindItem(itemId)
+    if not item then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
+    if self:GetTargetMode(item) == "own" then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_OWN_TOTAL_MANUAL)
+    end
+    quantity = tonumber(quantity)
+    unitPrice = tonumber(unitPrice) or 0
+    if not ShoppingListModel:IsWholeNumber(quantity, 1, MAX_QUANTITY)
+        or item.purchased + quantity > MAX_QUANTITY
+    then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_QUANTITY)
+    end
+    if not ShoppingListModel:IsWholeNumber(
+        unitPrice,
+        0,
+        ShoppingListModel.MAX_PRICE
+    ) then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_PRICE)
+    end
+    local snapshotted, snapshotMessage = self:CreateSafetySnapshot(
+        "pre_purchase_correction"
+    )
+    if not snapshotted then
+        return false, snapshotMessage
+    end
+
+    item.purchased = item.purchased + quantity
+    setItemCompletion(self, item)
+    local transaction = self:RecordPurchaseTransaction({
+        { entry = item, quantity = quantity },
+    }, {
+        quantity = quantity,
+        totalPrice = unitPrice * quantity,
+        unitPrice = unitPrice,
+        timestamp = GetTimeStamp(),
+        itemLink = item.itemLink,
+        itemName = item.name,
+        currencyType = CURT_MONEY,
+        manual = true,
+    })
+    self:NotifyUpdate("item", {
+        action = "progressAdjusted",
+        listId = list.id,
+        itemId = item.id,
+    })
+    return true, transaction
+end
+
+function Data:UpdatePurchaseHistory(
+    itemId,
+    historyIndex,
+    quantity,
+    unitPrice,
+    suppressSnapshot
+)
+    local item, _, list = self:FindItem(itemId)
+    if not item then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
+    local history = item.purchaseHistory and item.purchaseHistory[historyIndex]
+    if not history then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_PURCHASE_MISSING)
+    end
+    quantity = tonumber(quantity)
+    unitPrice = tonumber(unitPrice)
+    if not ShoppingListModel:IsWholeNumber(quantity, 1, MAX_QUANTITY)
+        or item.purchased - (history.quantity or 0) + quantity > MAX_QUANTITY
+    then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_QUANTITY)
+    end
+    if not ShoppingListModel:IsWholeNumber(
+        unitPrice,
+        0,
+        ShoppingListModel.MAX_PRICE
+    ) then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_PRICE)
+    end
+    if not suppressSnapshot then
+        local snapshotted, snapshotMessage = self:CreateSafetySnapshot(
+            "pre_purchase_correction"
+        )
+        if not snapshotted then
+            return false, snapshotMessage
+        end
+    end
+
+    local oldQuantity = math.max(0, tonumber(history.quantity) or 0)
+    local quantityDelta = quantity - oldQuantity
+    local contributes = purchaseContributesToProgress(list, history)
+    if contributes then
+        item.purchased = math.max(0, item.purchased - oldQuantity + quantity)
+    end
+    local transaction = history.transactionId
+        and self:FindPurchaseTransaction(history.transactionId)
+    if transaction then
+        if transaction.manual and #transaction.allocations == 1 then
+            transaction.quantity = quantity
+        end
+        transaction.unitPrice = unitPrice
+        transaction.totalPrice = math.floor(
+            (unitPrice * transaction.quantity) + 0.5
+        )
+        for _, allocation in ipairs(transaction.allocations) do
+            local allocatedItem, _, allocatedList = self:FindItem(allocation.itemId)
+            if allocatedItem and allocatedList then
+                local allocatedHistory = findHistoryByTransaction(
+                    allocatedItem,
+                    transaction.id
+                )
+                local oldPrice = math.max(
+                    0,
+                    tonumber(allocation.allocatedPrice) or 0
+                )
+                if allocation.itemId == item.id then
+                    allocation.quantity = quantity
+                end
+                local newPrice = math.floor(
+                    (unitPrice * allocation.quantity) + 0.5
+                )
+                allocation.allocatedPrice = newPrice
+                addSpendingDelta(
+                    allocatedItem,
+                    allocatedList,
+                    newPrice - oldPrice,
+                    allocation.itemId == item.id and quantityDelta or 0
+                )
+                if allocatedHistory then
+                    allocatedHistory.quantity = allocation.quantity
+                    allocatedHistory.unitPrice = unitPrice
+                    allocatedHistory.totalPrice = newPrice
+                    allocatedHistory.listingQuantity = transaction.quantity
+                    allocatedHistory.listingPrice = transaction.totalPrice
+                end
+            end
+        end
+        self:RedistributeTransactionPrice(transaction)
+    else
+        local oldPrice = math.max(0, tonumber(history.totalPrice) or 0)
+        local newPrice = math.floor((unitPrice * quantity) + 0.5)
+        history.quantity = quantity
+        history.unitPrice = unitPrice
+        history.totalPrice = newPrice
+        history.listingQuantity = quantity
+        history.listingPrice = newPrice
+        addSpendingDelta(item, list, newPrice - oldPrice, quantityDelta)
+    end
+    setItemCompletion(self, item)
+    self:NotifyUpdate("purchase", {
+        action = "corrected",
+        transactionId = history.transactionId,
+        listIds = { list.id },
+        itemIds = { item.id },
+    })
+    return true, history
+end
+
+function Data:RemovePurchaseHistory(itemId, historyIndex, suppressSnapshot)
+    local item, _, list = self:FindItem(itemId)
+    if not item then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
+    local history = item.purchaseHistory and item.purchaseHistory[historyIndex]
+    if not history then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_PURCHASE_MISSING)
+    end
+    if not suppressSnapshot then
+        local snapshotted, snapshotMessage = self:CreateSafetySnapshot(
+            "pre_purchase_correction"
+        )
+        if not snapshotted then
+            return false, snapshotMessage
+        end
+    end
+
+    local quantity = math.max(0, tonumber(history.quantity) or 0)
+    local allocatedPrice = math.max(0, tonumber(history.totalPrice) or 0)
+    if purchaseContributesToProgress(list, history) then
+        item.purchased = math.max(0, item.purchased - quantity)
+    end
+    addSpendingDelta(item, list, -allocatedPrice, -quantity)
+    table.remove(item.purchaseHistory, historyIndex)
+    item.purchaseCount = math.max(0, (tonumber(item.purchaseCount) or 0) - 1)
+
+    local transaction, transactionIndex = history.transactionId
+        and self:FindPurchaseTransaction(history.transactionId)
+    if transaction then
+        local removedTransactionPrice = 0
+        for index = #transaction.allocations, 1, -1 do
+            if transaction.allocations[index].itemId == item.id then
+                removedTransactionPrice = math.max(
+                    0,
+                    tonumber(transaction.allocations[index].transactionPrice) or 0
+                )
+                table.remove(transaction.allocations, index)
+                break
+            end
+        end
+        list.transactionSpent = math.max(
+            0,
+            (tonumber(list.transactionSpent) or 0) - removedTransactionPrice
+        )
+        self:RedistributeTransactionPrice(transaction)
+        if #transaction.allocations == 0 then
+            table.remove(self.saved.purchaseTransactions, transactionIndex)
+        end
+    end
+    setItemCompletion(self, item)
+    self:NotifyUpdate("purchase", {
+        action = "removed",
+        transactionId = history.transactionId,
+        listIds = { list.id },
+        itemIds = { item.id },
+    })
+    return true
+end
+
+function Data:AdjustPurchasedQuantity(itemId, change, unitPrice)
+    local item, _, list = self:FindItem(itemId)
+    if not item then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_ITEM_MISSING)
+    end
+    if list.locked then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+    end
+    change = tonumber(change)
+    if not change or change ~= math.floor(change) or change == 0 then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_QUANTITY)
+    end
+    if change > 0 then
+        return self:AddManualAcquisition(itemId, change, unitPrice)
+    end
+    if self:GetTargetMode(item) == "own" then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_OWN_TOTAL_MANUAL)
+    end
+    local remaining = math.min(-change, item.purchased)
+    local applied = remaining
+    if remaining == 0 then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_INVALID_QUANTITY)
+    end
+    local snapshotted, snapshotMessage = self:CreateSafetySnapshot(
+        "pre_purchase_correction"
+    )
+    if not snapshotted then
+        return false, snapshotMessage
+    end
+    while remaining > 0 and #(item.purchaseHistory or {}) > 0 do
+        local index
+        for candidateIndex = #item.purchaseHistory, 1, -1 do
+            if purchaseContributesToProgress(
+                list,
+                item.purchaseHistory[candidateIndex]
+            ) then
+                index = candidateIndex
+                break
+            end
+        end
+        if not index then break end
+        local history = item.purchaseHistory[index]
+        local quantity = math.max(0, tonumber(history.quantity) or 0)
+        if quantity <= remaining then
+            local ok, message = self:RemovePurchaseHistory(itemId, index, true)
+            if not ok then return false, message end
+            remaining = remaining - quantity
+        else
+            local ok, message = self:UpdatePurchaseHistory(
+                itemId,
+                index,
+                quantity - remaining,
+                math.floor(tonumber(history.unitPrice) or 0),
+                true
+            )
+            if not ok then return false, message end
+            remaining = 0
+        end
+    end
+    if remaining > 0 then
+        item.purchased = math.max(0, item.purchased - remaining)
+        setItemCompletion(self, item)
+    end
+    self:NotifyUpdate("item", {
+        action = "progressAdjusted",
+        listId = list.id,
+        itemId = item.id,
+    })
+    return true, -applied
+end
+
+function Data:UndoLatestPurchase(itemId)
+    local transaction, transactionIndex
+    for index = #(self.saved.purchaseTransactions or {}), 1, -1 do
+        local candidate = self.saved.purchaseTransactions[index]
+        for _, allocation in ipairs(candidate.allocations or {}) do
+            if itemId == nil or allocation.itemId == itemId then
+                transaction = candidate
+                transactionIndex = index
+                break
+            end
+        end
+        if transaction then break end
+    end
+    if not transaction then
+        return false, GetString(SI_SHOPPING_LIST_ERROR_PURCHASE_MISSING)
+    end
+    for _, allocation in ipairs(transaction.allocations) do
+        local _, _, list = self:FindItem(allocation.itemId)
+        if list and list.locked then
+            return false, GetString(SI_SHOPPING_LIST_ERROR_LIST_LOCKED)
+        end
+    end
+    local snapshotted, snapshotMessage = self:CreateSafetySnapshot(
+        "pre_purchase_correction"
+    )
+    if not snapshotted then
+        return false, snapshotMessage
+    end
+
+    local listIds = {}
+    local itemIds = {}
+    local seenLists = {}
+    for _, allocation in ipairs(transaction.allocations) do
+        local item, _, list = self:FindItem(allocation.itemId)
+        if item and list then
+            if purchaseContributesToProgress(list, transaction) then
+                item.purchased = math.max(
+                    0,
+                    item.purchased - allocation.quantity
+                )
+            end
+            addSpendingDelta(
+                item,
+                list,
+                -allocation.allocatedPrice,
+                -allocation.quantity
+            )
+            local _, historyIndex = findHistoryByTransaction(item, transaction.id)
+            if historyIndex then
+                table.remove(item.purchaseHistory, historyIndex)
+                item.purchaseCount = math.max(
+                    0,
+                    (tonumber(item.purchaseCount) or 0) - 1
+                )
+            end
+            setItemCompletion(self, item)
+            itemIds[#itemIds + 1] = item.id
+            if not seenLists[list.id] then
+                seenLists[list.id] = true
+                listIds[#listIds + 1] = list.id
+            end
+        end
+    end
+    for _, listId in ipairs(listIds) do
+        local list = self:FindList(listId)
+        local transactionPrice = 0
+        for _, allocation in ipairs(transaction.allocations) do
+            if allocation.listId == listId then
+                transactionPrice = transactionPrice + allocation.transactionPrice
+            end
+        end
+        list.transactionSpent = math.max(
+            0,
+            (tonumber(list.transactionSpent) or 0) - transactionPrice
+        )
+    end
+    table.remove(self.saved.purchaseTransactions, transactionIndex)
+    self:NotifyUpdate("purchase", {
+        action = "undone",
+        transactionId = transaction.id,
+        listIds = listIds,
+        itemIds = itemIds,
+    })
+    return true, transaction
 end
 
 function Data.NormalizeName(name)
