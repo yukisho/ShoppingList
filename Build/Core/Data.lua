@@ -249,7 +249,7 @@ function Data:New()
     if not startupExternal then
         return nil, backupMessage
     end
-    local ok, message = data:Migrate()
+    local ok, message = data:Migrate(startupExternal)
     if not ok then
         return nil, message
     end
@@ -1195,11 +1195,14 @@ function Data:GetSafetySnapshots()
         and recovery.snapshots or {}
 end
 
-function Data:Migrate()
+function Data:Migrate(externalSnapshot)
     local version = tonumber(self.saved.schemaVersion) or 1
     if version < CURRENT_SCHEMA_VERSION then
         local saved, message = self:CreateSafetySnapshot("pre_migration")
-        if not saved then
+        local hasExternalCopy = type(externalSnapshot) == "table"
+            and (type(externalSnapshot.code) == "string"
+                or type(externalSnapshot.data) == "table")
+        if not saved and not hasExternalCopy then
             return false, message
         end
     end
@@ -1255,6 +1258,13 @@ end
 function Data:RecoverLegacyData()
     local staged = GravvyShoppingListLegacySavedVariables
     if type(staged) ~= "table" or type(staged.saved) ~= "table" then
+        return false
+    end
+    local stagedRecovery = staged.saved.legacyRecovery
+    if type(stagedRecovery) == "table"
+        and type(stagedRecovery.imports) == "table"
+        and next(stagedRecovery.imports) ~= nil
+    then
         return false
     end
     if not hasLegacyListContent(staged.saved) then
