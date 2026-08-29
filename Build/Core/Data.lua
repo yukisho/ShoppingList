@@ -23,6 +23,13 @@ local VALID_FILTERS = {
     overTarget = true,
     restricted = true,
 }
+local VALID_PRICE_SOURCES = {
+    auto = true,
+    ttc = true,
+    esohub = true,
+    mm = true,
+    att = true,
+}
 local DEFAULT_ITEM_SORT = "added"
 
 local defaults = {
@@ -73,6 +80,8 @@ local defaults = {
         highContrast = false,
         nonColorIndicators = false,
         autoFindNext = false,
+        showPriceSuggestions = true,
+        priceSource = "auto",
         window = {
             width = 350,
             height = 500,
@@ -342,6 +351,14 @@ function Data:Normalize()
     settings.highContrast = settings.highContrast == true
     settings.nonColorIndicators = settings.nonColorIndicators == true
     settings.autoFindNext = settings.autoFindNext == true
+    if settings.showPriceSuggestions == nil then
+        settings.showPriceSuggestions = true
+    else
+        settings.showPriceSuggestions = settings.showPriceSuggestions == true
+    end
+    if not VALID_PRICE_SOURCES[settings.priceSource] then
+        settings.priceSource = "auto"
+    end
     local window = settings.window or {}
     settings.window = window
     window.width = zo_clamp(tonumber(window.width) or 350, 350, 900)
@@ -855,6 +872,9 @@ function Data:ValidateBackupSnapshot(snapshot)
         or not optionalBoolean(settings.highContrast)
         or not optionalBoolean(settings.nonColorIndicators)
         or not optionalBoolean(settings.autoFindNext)
+        or not optionalBoolean(settings.showPriceSuggestions)
+        or (settings.priceSource ~= nil
+            and not VALID_PRICE_SOURCES[settings.priceSource])
         or (settings.window ~= nil and type(settings.window) ~= "table")
     then
         return false

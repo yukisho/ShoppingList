@@ -1,3 +1,8 @@
+0.19.2
+• Added list cost projections showing spending, remaining target cost, projected total, current and planned budget balances, and entries without maximum prices.
+• Added optional local price suggestions from Tamriel Trade Centre, EsoHub, Master Merchant, and Arkadius Trade Tools for linked items.
+• Added explicit Use Suggestion actions for keyboard and gamepad editors without replacing or saving the player's chosen maximum price automatically.
+
 0.19.1
 • Removed duplicate lists created by the retired legacy recovery, including saves where some copies had already been deleted manually.
 • Made the Getting Started and Release Notes content scrollable so longer text is no longer cut off.
