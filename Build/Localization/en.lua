@@ -367,6 +367,7 @@ ZO_CreateStringId("SI_SHOPPING_LIST_EXTERNAL_RESTORE_FAILED", "Shopping List det
 ZO_CreateStringId("SI_SHOPPING_LIST_SAFETY_MISSING", "That Shopping List safety copy is no longer available.")
 ZO_CreateStringId("SI_SHOPPING_LIST_LEGACY_RECOVERED", "Shopping List recovered <<1>> list(s) from the former saved-data file.")
 ZO_CreateStringId("SI_SHOPPING_LIST_LEGACY_RECOVERY_FAILED", "Shopping List found former saved data but could not import it safely. Both saved-data files were left intact.")
+ZO_CreateStringId("SI_SHOPPING_LIST_LEGACY_DUPLICATES_REMOVED", "Shopping List removed <<1>> duplicate list(s) created by the retired legacy recovery. A complete startup safety copy was kept.")
 ZO_CreateStringId("SI_SHOPPING_LIST_SAFETY_TITLE", "Automatic safety copies")
 ZO_CreateStringId("SI_SHOPPING_LIST_SAFETY_RESTORE", "Restore Safety Copy")
 ZO_CreateStringId("SI_SHOPPING_LIST_SAFETY_RESTORE_TITLE", "Restore Automatic Safety Copy")

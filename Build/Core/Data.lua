@@ -253,7 +253,12 @@ function Data:New()
     if not ok then
         return nil, message
     end
-    data:DetectStartupDataLoss(startupExternal, previousExternal)
+    local repairedCount = data:RepairRepeatedLegacyImports(startupExternal)
+    if repairedCount > 0 then
+        data:CreateExternalSnapshot("legacy_duplicate_repair", data.saved)
+    else
+        data:DetectStartupDataLoss(startupExternal, previousExternal)
+    end
     data:RecoverLegacyData()
     return data
 end
@@ -1101,9 +1106,15 @@ function Data:DetectStartupDataLoss(startupSnapshot, previousSnapshot)
     end
     if not self.pendingExternalRestore then
         local snapshots = self:GetSafetySnapshots()
+        local duplicateRepair = type(self.saved.legacyRecovery) == "table"
+            and self.saved.legacyRecovery.duplicateRepair or nil
+        local ignoreSafetyThroughId = type(duplicateRepair) == "table"
+            and tonumber(duplicateRepair.lastSafetySnapshotId) or nil
         for index = #snapshots, 1, -1 do
             local safety = snapshots[index]
-            local recovered = type(safety) == "table"
+            local mayRestore = not ignoreSafetyThroughId
+                or (tonumber(safety.id) or 0) > ignoreSafetyThroughId
+            local recovered = mayRestore and type(safety) == "table"
                 and type(safety.code) == "string"
                 and ShoppingListBackup.Decode(safety.code) or nil
             if recovered then
@@ -1363,6 +1374,224 @@ function Data:RecoverLegacyData()
     applyState(self.saved, prepared)
     self.legacyRecoveredCount = recoveredCount
     return true
+end
+
+function Data:RepairRepeatedLegacyImports(startupSnapshot)
+    local recovery = self.saved.legacyRecovery
+    if type(recovery) ~= "table" then
+        return 0
+    end
+    local completed = recovery.duplicateRepair
+    if type(completed) == "table"
+        and tonumber(completed.version) == 1
+    then
+        return 0
+    end
+    if type(recovery.imports) ~= "table" then
+        return 0
+    end
+
+    local imports = {}
+    local importedCount = 0
+    for _, entry in pairs(recovery.imports) do
+        local count = type(entry) == "table" and tonumber(entry.listCount)
+        local recoveredAt = type(entry) == "table"
+            and tonumber(entry.recoveredAt) or nil
+        local backupCode = type(entry) == "table" and entry.backupCode or nil
+        if not count or count < 1 or count ~= math.floor(count)
+            or not recoveredAt
+        then
+            return 0
+        end
+        imports[#imports + 1] = {
+            count = count,
+            recoveredAt = recoveredAt,
+            backupCode = backupCode,
+        }
+        importedCount = importedCount + count
+    end
+    if #imports < 2 then
+        return 0
+    end
+
+    table.sort(imports, function(left, right)
+        return left.recoveredAt < right.recoveredAt
+    end)
+    for index = 2, #imports do
+        if imports[index - 1].recoveredAt == imports[index].recoveredAt then
+            return 0
+        end
+    end
+    if type(imports[1].backupCode) ~= "string" then
+        return 0
+    end
+
+    local originalCount = imports[1].count
+    local runningCount = originalCount
+    for _, entry in ipairs(imports) do
+        if entry.count ~= runningCount then
+            return 0
+        end
+        runningCount = runningCount + entry.count
+    end
+
+    local original = ShoppingListBackup.Decode(imports[1].backupCode)
+    if not original then
+        return 0
+    end
+    original = self:PrepareCandidate(original)
+    if not original
+        or #original.lists + #original.archivedLists ~= originalCount
+    then
+        return 0
+    end
+
+    local generatedFirstId = tonumber(original.nextListId)
+    local generatedLastId = generatedFirstId
+        and generatedFirstId + importedCount - 1 or nil
+    if not generatedFirstId
+        or generatedFirstId < 1
+        or generatedFirstId ~= math.floor(generatedFirstId)
+        or generatedLastId > MAX_U32
+    then
+        return 0
+    end
+
+    for _, collection in ipairs({ original.lists, original.archivedLists }) do
+        for _, list in ipairs(collection) do
+            if list.id >= generatedFirstId and list.id <= generatedLastId then
+                return 0
+            end
+        end
+    end
+
+    local candidate = extractState(self.saved)
+    local currentById = {}
+    for _, collection in ipairs({ candidate.lists, candidate.archivedLists }) do
+        for _, list in ipairs(collection) do
+            currentById[list.id] = list
+        end
+    end
+
+    local representative
+    local soleOriginal = originalCount == 1
+        and (original.lists[1] or original.archivedLists[1]) or nil
+    if soleOriginal and not currentById[soleOriginal.id] then
+        local selected = currentById[candidate.selectedListId]
+        if selected and selected.id >= generatedFirstId
+            and selected.id <= generatedLastId
+        then
+            representative = selected
+        else
+            for _, collection in ipairs({ candidate.lists, candidate.archivedLists }) do
+                for _, list in ipairs(collection) do
+                    if list.id >= generatedFirstId
+                        and list.id <= generatedLastId
+                        and (not representative or list.id < representative.id)
+                    then
+                        representative = list
+                    end
+                end
+            end
+        end
+    end
+
+    local removedCount = 0
+    local retainedIds = {}
+    local function removeGeneratedCopies(source)
+        local result = {}
+        for _, list in ipairs(source or {}) do
+            local generated = list.id >= generatedFirstId
+                and list.id <= generatedLastId
+            if not generated or list == representative then
+                result[#result + 1] = list
+                retainedIds[list.id] = true
+            else
+                removedCount = removedCount + 1
+            end
+        end
+        return result
+    end
+    candidate.lists = removeGeneratedCopies(candidate.lists)
+    candidate.archivedLists = removeGeneratedCopies(candidate.archivedLists)
+
+    local restoredOriginalCount = 0
+    local representedOriginalId = representative and soleOriginal.id or nil
+    local function restoreMissingOriginals(source, archived)
+        local target = archived and candidate.archivedLists or candidate.lists
+        for _, list in ipairs(source) do
+            if not retainedIds[list.id] and list.id ~= representedOriginalId then
+                target[#target + 1] = deepCopy(list)
+                retainedIds[list.id] = true
+                restoredOriginalCount = restoredOriginalCount + 1
+            end
+        end
+    end
+    restoreMissingOriginals(original.lists, false)
+    restoreMissingOriginals(original.archivedLists, true)
+
+    if representative then
+        local originalName = normalizeName(soleOriginal.name)
+        local nameAvailable = true
+        for _, collection in ipairs({ candidate.lists, candidate.archivedLists }) do
+            for _, list in ipairs(collection) do
+                if list ~= representative and normalizeName(list.name) == originalName then
+                    nameAvailable = false
+                    break
+                end
+            end
+            if not nameAvailable then
+                break
+            end
+        end
+        if nameAvailable then
+            representative.name = soleOriginal.name
+        end
+    end
+
+    local selectedExists = false
+    for _, list in ipairs(candidate.lists) do
+        if list.id == candidate.selectedListId then
+            selectedExists = true
+            break
+        end
+    end
+    if not selectedExists then
+        local preferredId = original.selectedListId
+        candidate.selectedListId = retainedIds[preferredId]
+            and preferredId or candidate.lists[1].id
+    end
+
+    candidate.legacyRecovery = candidate.legacyRecovery or {}
+    candidate.legacyRecovery.imports = {}
+    local lastSafetySnapshotId = 0
+    local safetySnapshots = type(candidate.recovery) == "table"
+        and candidate.recovery.snapshots or nil
+    if type(safetySnapshots) == "table" then
+        for _, snapshot in ipairs(safetySnapshots) do
+            lastSafetySnapshotId = math.max(
+                lastSafetySnapshotId,
+                math.floor(tonumber(snapshot.id) or 0)
+            )
+        end
+    end
+    candidate.legacyRecovery.duplicateRepair = {
+        version = 1,
+        repairedAt = GetTimeStamp(),
+        removedListCount = removedCount,
+        restoredOriginalListCount = restoredOriginalCount,
+        lastSafetySnapshotId = lastSafetySnapshotId,
+        startupSnapshotId = type(startupSnapshot) == "table"
+            and startupSnapshot.id or nil,
+    }
+
+    local prepared = self:PrepareCandidate(candidate)
+    if not prepared then
+        return 0
+    end
+    applyState(self.saved, prepared)
+    self.legacyDuplicateRepairCount = removedCount
+    return removedCount
 end
 
 function Data:RestoreSafetySnapshot(id)

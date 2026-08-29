@@ -97,6 +97,12 @@ function addon:Initialize()
     elseif self.data.legacyRecoveryError then
         d(self.data.legacyRecoveryError)
     end
+    if self.data.legacyDuplicateRepairCount then
+        d(zo_strformat(
+            GetString(SI_SHOPPING_LIST_LEGACY_DUPLICATES_REMOVED),
+            self.data.legacyDuplicateRepairCount
+        ))
+    end
 end
 
 function addon:HandleStoreOpened()

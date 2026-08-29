@@ -372,6 +372,7 @@ local strings = {
     SI_SHOPPING_LIST_SAFETY_MISSING = "Esa copia de seguridad de Lista de compras ya no está disponible.",
     SI_SHOPPING_LIST_LEGACY_RECOVERED = "Lista de compras recuperó <<1>> lista(s) del antiguo archivo de datos guardados.",
     SI_SHOPPING_LIST_LEGACY_RECOVERY_FAILED = "Lista de compras encontró datos guardados antiguos, pero no pudo importarlos de forma segura. Ambos archivos quedaron intactos.",
+    SI_SHOPPING_LIST_LEGACY_DUPLICATES_REMOVED = "Lista de compras eliminó <<1>> lista(s) duplicada(s) creadas por la recuperación heredada retirada. Se conservó una copia de seguridad completa del inicio.",
     SI_SHOPPING_LIST_SAFETY_TITLE = "Copias de seguridad automáticas",
     SI_SHOPPING_LIST_SAFETY_RESTORE = "Restaurar copia de seguridad",
     SI_SHOPPING_LIST_SAFETY_RESTORE_TITLE = "Restaurar copia de seguridad automática",

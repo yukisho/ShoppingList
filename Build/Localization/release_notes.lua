@@ -1,7 +1,11 @@
 local releaseNotes = {
     en = [[
 
-Current release · 0.19.0
+Current release · 0.19.1
+• Removed duplicate lists created by the retired legacy recovery, including saves where some copies were already deleted.
+• Getting Started and Release Notes can now be scrolled so longer text remains readable.
+
+0.19.0
 • Owned inventory is now allocated once across matching Own Total entries in active shopping trips.
 • Added purchase corrections, persistent list locking, Find Next, and optional next item selection after purchases.
 • Added Shopping List status markers to current guild store results without remote searches.
@@ -35,7 +39,11 @@ Current release · 0.19.0
 • Added inventory-aware quantities, notes, full SLB1 backup, accessibility settings, chat-link actions, and Spanish and French translations.]],
     es = [[
 
-Versión actual · 0.19.0
+Versión actual · 0.19.1
+• Se eliminaron las listas duplicadas creadas por la recuperación heredada retirada, incluso si algunas copias ya se habían borrado.
+• Ahora se puede desplazar el contenido de Primeros pasos y Notas de la versión para leer todo el texto.
+
+0.19.0
 • El inventario propio se asigna una sola vez entre entradas Total propio coincidentes de los viajes activos.
 • Se añadieron correcciones de compras, bloqueo de listas, Buscar siguiente y selección opcional tras comprar.
 • Se añadieron indicadores de Lista de compras a los resultados de la tienda actual sin búsquedas remotas.
@@ -69,7 +77,11 @@ Versión actual · 0.19.0
 • Se añadieron cantidades de inventario, notas, copia completa SLB1, accesibilidad, acciones de enlaces del chat y traducciones al español y francés.]],
     fr = [[
 
-Version actuelle · 0.19.0
+Version actuelle · 0.19.1
+• Suppression des listes dupliquées par l'ancien outil de récupération, même si certaines copies avaient déjà été supprimées.
+• Le contenu de Bien démarrer et des Notes de version peut désormais défiler afin que tout le texte reste lisible.
+
+0.19.0
 • L'inventaire possédé est attribué une seule fois entre les entrées Total possédé des trajets actifs.
 • Ajout des corrections d'achat, du verrouillage des listes, de Trouver suivant et de la sélection facultative après achat.
 • Ajout d'indicateurs Liste de courses aux résultats de la boutique actuelle sans recherche distante.

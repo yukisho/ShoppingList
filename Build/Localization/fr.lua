@@ -372,6 +372,7 @@ local strings = {
     SI_SHOPPING_LIST_SAFETY_MISSING = "Cette copie de sécurité de Liste de courses n'est plus disponible.",
     SI_SHOPPING_LIST_LEGACY_RECOVERED = "Liste de courses a récupéré <<1>> liste(s) depuis l'ancien fichier de données.",
     SI_SHOPPING_LIST_LEGACY_RECOVERY_FAILED = "Liste de courses a trouvé d'anciennes données, mais n'a pas pu les importer en toute sécurité. Les deux fichiers ont été laissés intacts.",
+    SI_SHOPPING_LIST_LEGACY_DUPLICATES_REMOVED = "Liste de courses a supprimé <<1>> liste(s) dupliquée(s) par l'ancien outil de récupération désormais retiré. Une copie de sécurité complète du démarrage a été conservée.",
     SI_SHOPPING_LIST_SAFETY_TITLE = "Copies de sécurité automatiques",
     SI_SHOPPING_LIST_SAFETY_RESTORE = "Restaurer la copie",
     SI_SHOPPING_LIST_SAFETY_RESTORE_TITLE = "Restaurer une copie de sécurité automatique",

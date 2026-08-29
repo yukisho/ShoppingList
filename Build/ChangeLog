@@ -1,3 +1,7 @@
+0.19.1
+• Removed duplicate lists created by the retired legacy recovery, including saves where some copies had already been deleted manually.
+• Made the Getting Started and Release Notes content scrollable so longer text is no longer cut off.
+
 0.19.0
 • Allocated backpack, bank, and craft bag stock once across matching Own Total entries in active shopping trips, with specific matching rules receiving stock first.
 • Added purchase corrections for acquired quantities, reductions, unit prices, incorrect history records, and undoing the latest matched transaction.
